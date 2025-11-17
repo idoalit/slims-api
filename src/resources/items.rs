@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     routing::get,
 };
-use chrono::NaiveDateTime;
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
@@ -75,6 +75,19 @@ pub struct ItemResponse {
     pub location: Option<LocationSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub item_status: Option<ItemStatusSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loan_status: Option<LoanStatusSummary>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+pub struct LoanStatusSummary {
+    pub loan_id: i64,
+    pub item_code: Option<String>,
+    pub member_id: Option<String>,
+    pub loan_date: NaiveDate,
+    pub due_date: NaiveDate,
+    pub is_return: i32,
+    pub return_date: Option<NaiveDate>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -113,6 +126,7 @@ async fn list_items(
     let mut coll_type_cache: HashMap<i32, CollTypeSummary> = HashMap::new();
     let mut location_cache: HashMap<String, LocationSummary> = HashMap::new();
     let mut status_cache: HashMap<String, ItemStatusSummary> = HashMap::new();
+    let mut loan_status_cache: HashMap<String, LoanStatusSummary> = HashMap::new();
     let mut data = Vec::with_capacity(items.len());
 
     for item in items {
@@ -188,12 +202,31 @@ async fn list_items(
             }
         }
 
+        let mut loan_status = None;
+        if includes.contains("loan_status") {
+            if let Some(code) = item.item_code.clone() {
+                if let Some(existing) = loan_status_cache.get(&code) {
+                    loan_status = Some(existing.clone());
+                } else if let Some(row) = sqlx::query_as::<_, LoanStatusSummary>(
+                    "SELECT loan_id, item_code, member_id, loan_date, due_date, is_return, return_date FROM loan WHERE item_code = ? AND is_return = 0 ORDER BY loan_date DESC LIMIT 1",
+                )
+                .bind(&code)
+                .fetch_optional(&state.pool)
+                .await?
+                {
+                    loan_status_cache.insert(code.clone(), row.clone());
+                    loan_status = Some(row);
+                }
+            }
+        }
+
         data.push(ItemResponse {
             item,
             biblio,
             coll_type,
             location,
             item_status,
+            loan_status,
         });
     }
 
