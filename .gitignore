@@ -1,2 +1,11 @@
-/vendor/
-.DS_Store
+/target
+/.env
+.env.local
+/.vscode
+/.idea
+*.log
+*.sqlite
+*.db
+*.sql
+node_modules
+/.DS_Store
