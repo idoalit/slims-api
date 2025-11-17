@@ -6,6 +6,5 @@
 *.log
 *.sqlite
 *.db
-*.sql
 node_modules
 /.DS_Store
