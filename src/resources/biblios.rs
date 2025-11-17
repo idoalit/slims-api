@@ -24,6 +24,11 @@ pub struct Biblio {
     pub publisher_id: Option<i32>,
     pub publish_year: Option<String>,
     pub language_id: Option<String>,
+    pub content_type_id: Option<i32>,
+    pub media_type_id: Option<i32>,
+    pub carrier_type_id: Option<i32>,
+    pub frequency_id: Option<i32>,
+    pub publish_place_id: Option<i32>,
     pub classification: Option<String>,
     pub call_number: Option<String>,
     pub opac_hide: Option<i16>,
@@ -64,6 +69,51 @@ pub struct LanguageInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+pub struct ContentTypeInfo {
+    pub id: i64,
+    pub content_type: String,
+    pub code: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+pub struct MediaTypeInfo {
+    pub id: i64,
+    pub media_type: String,
+    pub code: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+pub struct CarrierTypeInfo {
+    pub id: i64,
+    pub carrier_type: String,
+    pub code: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+pub struct FrequencyInfo {
+    pub frequency_id: i64,
+    pub frequency: String,
+    pub language_prefix: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+pub struct PlaceInfo {
+    pub place_id: i64,
+    pub place_name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+pub struct ItemSummary {
+    pub item_id: i64,
+    pub item_code: Option<String>,
+    pub call_number: Option<String>,
+    pub coll_type_id: Option<i32>,
+    pub location_id: Option<String>,
+    pub item_status_id: Option<String>,
+    pub last_update: Option<NaiveDateTime>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
 pub struct AuthorInfo {
     pub author_id: i64,
     pub author_name: String,
@@ -88,9 +138,21 @@ pub struct BiblioResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<LanguageInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<ContentTypeInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<MediaTypeInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub carrier_type: Option<CarrierTypeInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency: Option<FrequencyInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub place: Option<PlaceInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub authors: Option<Vec<AuthorInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topics: Option<Vec<TopicInfo>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<ItemSummary>>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -118,7 +180,7 @@ async fn list_biblios(
         .await?;
 
     let rows = sqlx::query_as::<_, Biblio>(
-        "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio ORDER BY biblio_id DESC LIMIT ? OFFSET ?",
+        "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio ORDER BY biblio_id DESC LIMIT ? OFFSET ?",
     )
     .bind(limit)
     .bind(offset)
@@ -128,6 +190,11 @@ async fn list_biblios(
     let mut gmd_cache: HashMap<i32, GmdInfo> = HashMap::new();
     let mut publisher_cache: HashMap<i32, PublisherInfo> = HashMap::new();
     let mut language_cache: HashMap<String, LanguageInfo> = HashMap::new();
+    let mut content_type_cache: HashMap<i32, ContentTypeInfo> = HashMap::new();
+    let mut media_type_cache: HashMap<i32, MediaTypeInfo> = HashMap::new();
+    let mut carrier_type_cache: HashMap<i32, CarrierTypeInfo> = HashMap::new();
+    let mut frequency_cache: HashMap<i32, FrequencyInfo> = HashMap::new();
+    let mut place_cache: HashMap<i32, PlaceInfo> = HashMap::new();
     let mut data = Vec::with_capacity(rows.len());
 
     for biblio in rows {
@@ -185,6 +252,106 @@ async fn list_biblios(
             }
         }
 
+        let mut content_type = None;
+        if includes.contains("content_type") {
+            if let Some(ct_id) = biblio.content_type_id {
+                if ct_id > 0 {
+                    if let Some(existing) = content_type_cache.get(&ct_id) {
+                        content_type = Some(existing.clone());
+                    } else if let Some(row) = sqlx::query_as::<_, ContentTypeInfo>(
+                        "SELECT id, content_type, code FROM mst_content_type WHERE id = ?",
+                    )
+                    .bind(ct_id)
+                    .fetch_optional(&state.pool)
+                    .await?
+                    {
+                        content_type_cache.insert(ct_id, row.clone());
+                        content_type = Some(row);
+                    }
+                }
+            }
+        }
+
+        let mut media_type = None;
+        if includes.contains("media_type") {
+            if let Some(mt_id) = biblio.media_type_id {
+                if mt_id > 0 {
+                    if let Some(existing) = media_type_cache.get(&mt_id) {
+                        media_type = Some(existing.clone());
+                    } else if let Some(row) = sqlx::query_as::<_, MediaTypeInfo>(
+                        "SELECT id, media_type, code FROM mst_media_type WHERE id = ?",
+                    )
+                    .bind(mt_id)
+                    .fetch_optional(&state.pool)
+                    .await?
+                    {
+                        media_type_cache.insert(mt_id, row.clone());
+                        media_type = Some(row);
+                    }
+                }
+            }
+        }
+
+        let mut carrier_type = None;
+        if includes.contains("carrier_type") {
+            if let Some(ct_id) = biblio.carrier_type_id {
+                if ct_id > 0 {
+                    if let Some(existing) = carrier_type_cache.get(&ct_id) {
+                        carrier_type = Some(existing.clone());
+                    } else if let Some(row) = sqlx::query_as::<_, CarrierTypeInfo>(
+                        "SELECT id, carrier_type, code FROM mst_carrier_type WHERE id = ?",
+                    )
+                    .bind(ct_id)
+                    .fetch_optional(&state.pool)
+                    .await?
+                    {
+                        carrier_type_cache.insert(ct_id, row.clone());
+                        carrier_type = Some(row);
+                    }
+                }
+            }
+        }
+
+        let mut frequency = None;
+        if includes.contains("frequency") {
+            if let Some(freq_id) = biblio.frequency_id {
+                if freq_id > 0 {
+                    if let Some(existing) = frequency_cache.get(&freq_id) {
+                        frequency = Some(existing.clone());
+                    } else if let Some(row) = sqlx::query_as::<_, FrequencyInfo>(
+                        "SELECT frequency_id, frequency, language_prefix FROM mst_frequency WHERE frequency_id = ?",
+                    )
+                    .bind(freq_id)
+                    .fetch_optional(&state.pool)
+                    .await?
+                    {
+                        frequency_cache.insert(freq_id, row.clone());
+                        frequency = Some(row);
+                    }
+                }
+            }
+        }
+
+        let mut place = None;
+        if includes.contains("place") {
+            if let Some(place_id) = biblio.publish_place_id {
+                if place_id > 0 {
+                    if let Some(existing) = place_cache.get(&place_id) {
+                        place = Some(existing.clone());
+                    } else if let Some(row) = sqlx::query_as::<_, PlaceInfo>(
+                        "SELECT place_id, place_name FROM mst_place WHERE place_id = ?",
+                    )
+                    .bind(place_id)
+                    .fetch_optional(&state.pool)
+                    .await?
+                    {
+                        place_cache.insert(place_id, row.clone());
+                        place = Some(row);
+                    }
+                }
+            }
+        }
+
         let authors = if includes.contains("authors") {
             let rows = sqlx::query_as::<_, AuthorInfo>(
                 "SELECT a.author_id, a.author_name, a.authority_type FROM biblio_author ba JOIN mst_author a ON ba.author_id = a.author_id WHERE ba.biblio_id = ?",
@@ -209,13 +376,31 @@ async fn list_biblios(
             None
         };
 
+        let items = if includes.contains("items") {
+            let rows = sqlx::query_as::<_, ItemSummary>(
+                "SELECT item_id, item_code, call_number, coll_type_id, location_id, item_status_id, last_update FROM item WHERE biblio_id = ? ORDER BY item_id DESC",
+            )
+            .bind(biblio.biblio_id)
+            .fetch_all(&state.pool)
+            .await?;
+            Some(rows)
+        } else {
+            None
+        };
+
         data.push(BiblioResponse {
             biblio,
             gmd,
             publisher,
             language,
+            content_type,
+            media_type,
+            carrier_type,
+            frequency,
+            place,
             authors,
             topics,
+            items,
         });
     }
 
@@ -235,7 +420,7 @@ async fn get_biblio(
     auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
 
     let row = sqlx::query_as::<_, Biblio>(
-        "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ?",
+        "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ?",
     )
     .bind(biblio_id)
     .fetch_one(&state.pool)
@@ -270,7 +455,7 @@ async fn create_biblio(
     .execute(&state.pool)
     .await?;
 
-    let rec = sqlx::query_as::<_, Biblio>("SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ?")
+    let rec = sqlx::query_as::<_, Biblio>("SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ?")
         .bind(result.last_insert_id() as i64)
         .fetch_one(&state.pool)
         .await?;
@@ -309,7 +494,7 @@ async fn update_biblio(
         return Err(AppError::NotFound);
     }
 
-    let rec = sqlx::query_as::<_, Biblio>("SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ?")
+    let rec = sqlx::query_as::<_, Biblio>("SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ?")
         .bind(biblio_id)
         .fetch_one(&state.pool)
         .await?;
