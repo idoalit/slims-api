@@ -26,11 +26,16 @@ API Overview (high level)
 - `GET /members` — paginated, optional `include=member_type`.
 - `GET /biblios` — paginated, optional `include=gmd,publisher,language,authors,topics`.
 - `GET /items` — paginated, optional `include=biblio,coll_type,location,item_status`.
-- `GET /loans` — paginated, optional `include=member,item`.
-- `GET /lookups/*` — paginated lookup lists (member-types, coll-types, locations, etc.).
+- `GET /loans` — paginated, optional `include=member,item`, plus create/return endpoints.
+- `GET /contents` — paginated list of CMS contents and by ID or path.
+- `GET /files` — paginated list of uploaded files, optional `include=biblios`.
+- `GET /visitors` — visitor log, paginated.
+- `GET /settings` — list settings or fetch a key; supports nested paths via dot notation.
+- `GET /lookups/*` — paginated lookup lists (member-types, coll-types, locations, topics, content/media/carrier types, etc.).
 - `GET /biblios/search` — simple search across title, authors, and topics with `q`, paginated and supports `include`.
 - `POST /biblios/search/advanced` — advanced search with field-specific clauses and boolean logic.
 - Standard CRUD for members, biblios, items; loans support create/return endpoints.
+- OpenAPI docs + Swagger UI available at `/docs` (served from `/api-docs/openapi.json`).
 
 Pagination & Include
 - Pagination query: `?page=1&per_page=20` (defaults: page=1, per_page=20, max 100).
