@@ -2,14 +2,14 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
 };
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use sqlx::{FromRow, Row, Column};
-use std::collections::HashMap;
 use sqlx::mysql::MySqlRow;
+use sqlx::{Column, FromRow, Row};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     auth::{AuthUser, Role},
@@ -186,35 +186,92 @@ pub struct BiblioResponse {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_biblios).post(create_biblio))
+        .route("/search", get(simple_search_biblios))
+        .route("/search/advanced", post(advanced_search_biblios))
         .route(
             "/:biblio_id",
             get(get_biblio).put(update_biblio).delete(delete_biblio),
         )
 }
 
-async fn list_biblios(
-    State(state): State<AppState>,
-    auth: AuthUser,
-    Query(params): Query<ListParams>,
-) -> Result<Json<PagedResponse<BiblioResponse>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+#[derive(Debug, Deserialize)]
+pub struct SimpleSearchParams {
+    pub q: String,
+    #[serde(flatten)]
+    pub list: ListParams,
+}
 
-    let pagination = params.pagination();
-    let includes = params.includes();
-    let (limit, offset, page, per_page) = pagination.limit_offset();
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum BooleanOp {
+    And,
+    Or,
+}
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM biblio")
-        .fetch_one(&state.pool)
-        .await?;
+impl Default for BooleanOp {
+    fn default() -> Self {
+        BooleanOp::And
+    }
+}
 
-    let rows = sqlx::query_as::<_, Biblio>(
-        "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio ORDER BY biblio_id DESC LIMIT ? OFFSET ?",
-    )
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+impl BooleanOp {
+    fn as_sql(&self) -> &'static str {
+        match self {
+            BooleanOp::And => "AND",
+            BooleanOp::Or => "OR",
+        }
+    }
+}
 
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum MatchType {
+    Contains,
+    Exact,
+    StartsWith,
+    EndsWith,
+}
+
+impl Default for MatchType {
+    fn default() -> Self {
+        MatchType::Contains
+    }
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchField {
+    Title,
+    Author,
+    Topic,
+    Publisher,
+    IsbnIssn,
+    CallNumber,
+    Classification,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AdvancedClause {
+    pub field: SearchField,
+    pub value: String,
+    #[serde(default)]
+    pub op: BooleanOp,
+    #[serde(default)]
+    pub r#type: MatchType,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AdvancedSearchPayload {
+    pub clauses: Vec<AdvancedClause>,
+    #[serde(flatten)]
+    pub list: ListParams,
+}
+
+async fn enrich_biblios(
+    state: &AppState,
+    includes: &HashSet<String>,
+    rows: Vec<Biblio>,
+) -> Result<Vec<BiblioResponse>, AppError> {
     let mut gmd_cache: HashMap<i32, GmdInfo> = HashMap::new();
     let mut publisher_cache: HashMap<i32, PublisherInfo> = HashMap::new();
     let mut language_cache: HashMap<String, LanguageInfo> = HashMap::new();
@@ -473,6 +530,203 @@ async fn list_biblios(
         });
     }
 
+    Ok(data)
+}
+
+async fn list_biblios(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(params): Query<ListParams>,
+) -> Result<Json<PagedResponse<BiblioResponse>>, AppError> {
+    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+
+    let pagination = params.pagination();
+    let includes = params.includes();
+    let (limit, offset, page, per_page) = pagination.limit_offset();
+
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM biblio")
+        .fetch_one(&state.pool)
+        .await?;
+
+    let rows = sqlx::query_as::<_, Biblio>(
+        "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio ORDER BY biblio_id DESC LIMIT ? OFFSET ?",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let data = enrich_biblios(&state, &includes, rows).await?;
+
+    Ok(Json(PagedResponse {
+        data,
+        page,
+        per_page,
+        total,
+    }))
+}
+
+async fn simple_search_biblios(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(params): Query<SimpleSearchParams>,
+) -> Result<Json<PagedResponse<BiblioResponse>>, AppError> {
+    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+
+    let keyword = params.q.trim();
+    if keyword.is_empty() {
+        return Err(AppError::BadRequest("query cannot be empty".into()));
+    }
+
+    let pagination = params.list.pagination();
+    let includes = params.list.includes();
+    let (limit, offset, page, per_page) = pagination.limit_offset();
+    let pattern = format!("%{}%", keyword);
+
+    let count_query = "SELECT COUNT(DISTINCT b.biblio_id) FROM biblio b LEFT JOIN biblio_author ba ON ba.biblio_id = b.biblio_id LEFT JOIN mst_author a ON a.author_id = ba.author_id LEFT JOIN biblio_topic bt ON bt.biblio_id = b.biblio_id LEFT JOIN mst_topic t ON t.topic_id = bt.topic_id WHERE b.title LIKE ? OR a.author_name LIKE ? OR t.topic LIKE ?";
+    let total: i64 = sqlx::query_scalar(count_query)
+        .bind(&pattern)
+        .bind(&pattern)
+        .bind(&pattern)
+        .fetch_one(&state.pool)
+        .await?;
+
+    let data_query = "SELECT DISTINCT b.biblio_id, b.title, b.gmd_id, b.publisher_id, b.publish_year, b.language_id, b.content_type_id, b.media_type_id, b.carrier_type_id, b.frequency_id, b.publish_place_id, b.classification, b.call_number, b.opac_hide, b.promoted, b.input_date, b.last_update FROM biblio b LEFT JOIN biblio_author ba ON ba.biblio_id = b.biblio_id LEFT JOIN mst_author a ON a.author_id = ba.author_id LEFT JOIN biblio_topic bt ON bt.biblio_id = b.biblio_id LEFT JOIN mst_topic t ON t.topic_id = bt.topic_id WHERE b.title LIKE ? OR a.author_name LIKE ? OR t.topic LIKE ? ORDER BY b.biblio_id DESC LIMIT ? OFFSET ?";
+
+    let rows = sqlx::query_as::<_, Biblio>(data_query)
+        .bind(&pattern)
+        .bind(&pattern)
+        .bind(&pattern)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
+
+    let data = enrich_biblios(&state, &includes, rows).await?;
+
+    Ok(Json(PagedResponse {
+        data,
+        page,
+        per_page,
+        total,
+    }))
+}
+
+fn match_pattern(value: &str, matcher: MatchType) -> String {
+    match matcher {
+        MatchType::Contains => format!("%{}%", value),
+        MatchType::Exact => value.to_string(),
+        MatchType::StartsWith => format!("{}%", value),
+        MatchType::EndsWith => format!("%{}", value),
+    }
+}
+
+async fn advanced_search_biblios(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(payload): Json<AdvancedSearchPayload>,
+) -> Result<Json<PagedResponse<BiblioResponse>>, AppError> {
+    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+
+    let clauses: Vec<&AdvancedClause> = payload
+        .clauses
+        .iter()
+        .filter(|clause| !clause.value.trim().is_empty())
+        .collect();
+
+    if clauses.is_empty() {
+        return Err(AppError::BadRequest("clauses cannot be empty".into()));
+    }
+
+    let pagination = payload.list.pagination();
+    let includes = payload.list.includes();
+    let (limit, offset, page, per_page) = pagination.limit_offset();
+
+    let mut joins = String::new();
+    let mut joined_authors = false;
+    let mut joined_topics = false;
+    let mut joined_publishers = false;
+    let mut conditions: Vec<String> = Vec::with_capacity(clauses.len());
+    let mut bindings: Vec<String> = Vec::with_capacity(clauses.len());
+
+    for clause in clauses {
+        let column = match clause.field {
+            SearchField::Title => "b.title",
+            SearchField::Author => {
+                if !joined_authors {
+                    joins.push_str(
+                        " LEFT JOIN biblio_author ba ON ba.biblio_id = b.biblio_id LEFT JOIN mst_author a ON a.author_id = ba.author_id",
+                    );
+                    joined_authors = true;
+                }
+                "a.author_name"
+            }
+            SearchField::Topic => {
+                if !joined_topics {
+                    joins.push_str(
+                        " LEFT JOIN biblio_topic bt ON bt.biblio_id = b.biblio_id LEFT JOIN mst_topic t ON t.topic_id = bt.topic_id",
+                    );
+                    joined_topics = true;
+                }
+                "t.topic"
+            }
+            SearchField::Publisher => {
+                if !joined_publishers {
+                    joins.push_str(" LEFT JOIN mst_publisher p ON p.publisher_id = b.publisher_id");
+                    joined_publishers = true;
+                }
+                "p.publisher_name"
+            }
+            SearchField::IsbnIssn => "b.isbn_issn",
+            SearchField::CallNumber => "b.call_number",
+            SearchField::Classification => "b.classification",
+        };
+
+        let pattern = match_pattern(clause.value.trim(), clause.r#type);
+        let prefix = if conditions.is_empty() {
+            ""
+        } else {
+            clause.op.as_sql()
+        };
+
+        if prefix.is_empty() {
+            conditions.push(format!("{} LIKE ?", column));
+        } else {
+            conditions.push(format!("{} {} LIKE ?", prefix, column));
+        }
+
+        bindings.push(pattern);
+    }
+
+    let where_clause = format!(" WHERE {}", conditions.join(" "));
+    let base_from = format!(" FROM biblio b{}", joins);
+
+    let count_sql = format!(
+        "SELECT COUNT(DISTINCT b.biblio_id){}{}",
+        base_from, where_clause
+    );
+    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+    for value in &bindings {
+        count_query = count_query.bind(value);
+    }
+    let total = count_query.fetch_one(&state.pool).await?;
+
+    let data_sql = format!(
+        "SELECT DISTINCT b.biblio_id, b.title, b.gmd_id, b.publisher_id, b.publish_year, b.language_id, b.content_type_id, b.media_type_id, b.carrier_type_id, b.frequency_id, b.publish_place_id, b.classification, b.call_number, b.opac_hide, b.promoted, b.input_date, b.last_update{}{} ORDER BY b.biblio_id DESC LIMIT ? OFFSET ?",
+        base_from, where_clause
+    );
+    let mut data_query = sqlx::query_as::<_, Biblio>(&data_sql);
+    for value in &bindings {
+        data_query = data_query.bind(value);
+    }
+    let rows = data_query
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
+
+    let data = enrich_biblios(&state, &includes, rows).await?;
+
     Ok(Json(PagedResponse {
         data,
         page,
@@ -714,10 +968,7 @@ fn row_to_json(row: &MySqlRow) -> JsonValue {
     for (idx, col) in row.columns().iter().enumerate() {
         let key = col.name().to_string();
         let val: Option<String> = row.try_get(idx).ok();
-        map.insert(
-            key,
-            val.map(JsonValue::String).unwrap_or(JsonValue::Null),
-        );
+        map.insert(key, val.map(JsonValue::String).unwrap_or(JsonValue::Null));
     }
     JsonValue::Object(map)
 }
