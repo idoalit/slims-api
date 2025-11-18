@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 use crate::{
-    auth::{AuthUser, Role},
+    auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
     resources::{ListParams, PagedResponse},
@@ -56,7 +56,7 @@ async fn list_files(
     auth: AuthUser,
     Query(params): Query<ListParams>,
 ) -> Result<Json<PagedResponse<FileResponse>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let pagination = params.pagination();
     let includes = params.includes();
@@ -106,7 +106,7 @@ async fn get_file(
     Query(params): Query<ListParams>,
     Path(file_id): Path<i64>,
 ) -> Result<Json<FileResponse>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let file = sqlx::query_as::<_, FileObject>(
         "SELECT file_id, file_title, file_name, file_url, file_dir, mime_type, file_desc, file_key, uploader_id, input_date, last_update FROM files WHERE file_id = ?",

@@ -11,7 +11,7 @@ use axum::{
 use bcrypt::verify;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{FromRow, QueryBuilder};
 
 use crate::{config::AppState, error::AppError};
 
@@ -22,12 +22,6 @@ pub enum Role {
     Librarian,
     Staff,
     Member,
-}
-
-impl Role {
-    pub fn matches_any(&self, roles: &[Role]) -> bool {
-        roles.iter().any(|r| r == self)
-    }
 }
 
 impl TryFrom<String> for Role {
@@ -49,7 +43,42 @@ pub struct Claims {
     pub sub: i64,
     pub username: String,
     pub role: Role,
+    #[serde(default)]
+    pub access: Vec<ModulePermission>,
     pub exp: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Permission {
+    Read,
+    Write,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+#[repr(i64)]
+pub enum ModuleAccess {
+    Bibliography = 1,
+    Circulation = 2,
+    Membership = 3,
+    MasterFile = 4,
+    StockTake = 5,
+    System = 6,
+    Reporting = 7,
+    SerialControl = 8,
+}
+
+impl ModuleAccess {
+    pub fn id(self) -> i64 {
+        self as i64
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModulePermission {
+    pub module_id: i64,
+    pub read: bool,
+    pub write: bool,
 }
 
 pub struct AuthUser {
@@ -76,11 +105,10 @@ impl FromRequestParts<AppState> for AuthUser {
 }
 
 fn user_to_role(user: &User) -> Role {
-    // Simplified mapping: Administrator group or user_type==1 => Admin, else Staff
-    if let Some(groups) = &user.groups {
-        if groups.contains("1") {
-            return Role::Admin;
-        }
+    // Map based on group membership: group_id 1 or user_type==1 => Admin, else Staff
+    let group_ids = parse_groups(user.groups.as_deref());
+    if group_ids.contains(&1) {
+        return Role::Admin;
     }
     if matches!(user.user_type, Some(1)) {
         Role::Admin
@@ -90,8 +118,21 @@ fn user_to_role(user: &User) -> Role {
 }
 
 impl AuthUser {
-    pub fn require_roles(&self, allowed: &[Role]) -> Result<(), AppError> {
-        if self.claims.role.matches_any(allowed) {
+    pub fn require_access(
+        &self,
+        module: ModuleAccess,
+        permission: Permission,
+    ) -> Result<(), AppError> {
+        let module_id = module.id();
+        let can_access = self.claims.access.iter().find(|a| a.module_id == module_id);
+
+        let allowed = match (can_access, permission) {
+            (Some(access), Permission::Read) => access.read || access.write,
+            (Some(access), Permission::Write) => access.write,
+            _ => false,
+        };
+
+        if allowed {
             Ok(())
         } else {
             Err(AppError::Forbidden("insufficient permissions".into()))
@@ -128,6 +169,7 @@ pub struct AuthResponse {
     pub token: String,
     pub expires_at: usize,
     pub role: Role,
+    pub access: Vec<ModulePermission>,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -162,6 +204,9 @@ pub async fn login(
         })?;
 
     let role = user_to_role(&user);
+
+    let group_ids = parse_groups(user.groups.as_deref());
+    let access = fetch_group_access(&state, &group_ids).await?;
     let exp = (SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -172,6 +217,7 @@ pub async fn login(
         sub: user.user_id,
         username: user.username,
         role: role.clone(),
+        access: access.clone(),
         exp,
     };
 
@@ -185,9 +231,62 @@ pub async fn login(
         token,
         expires_at: exp,
         role,
+        access,
     }))
 }
 
 pub fn extract_secret(secret: String) -> Arc<str> {
     Arc::from(secret.into_boxed_str())
+}
+
+fn parse_groups(raw: Option<&str>) -> Vec<i64> {
+    let Some(raw) = raw else {
+        return Vec::new();
+    };
+
+    raw.split('"')
+        .enumerate()
+        .filter_map(|(idx, part)| (idx % 2 == 1).then(|| part))
+        .filter_map(|part| part.trim().parse::<i64>().ok())
+        .collect()
+}
+
+#[derive(Debug, FromRow)]
+struct GroupAccessRow {
+    module_id: i64,
+    r: i32,
+    w: i32,
+}
+
+async fn fetch_group_access(
+    state: &AppState,
+    group_ids: &[i64],
+) -> Result<Vec<ModulePermission>, AppError> {
+    if group_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut builder = QueryBuilder::new(
+        "SELECT module_id, MAX(r) AS r, MAX(w) AS w FROM group_access WHERE group_id IN (",
+    );
+
+    let mut separated = builder.separated(",");
+    for group_id in group_ids {
+        separated.push_bind(group_id);
+    }
+    builder.push(") GROUP BY module_id");
+
+    let rows = builder
+        .build_query_as::<GroupAccessRow>()
+        .fetch_all(&state.pool)
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| ModulePermission {
+            module_id: row.module_id,
+            read: row.r != 0,
+            write: row.w != 0,
+        })
+        .collect())
 }

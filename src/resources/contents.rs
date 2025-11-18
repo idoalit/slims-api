@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 use crate::{
-    auth::{AuthUser, Role},
+    auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
     resources::{ListParams, PagedResponse},
@@ -38,7 +38,7 @@ async fn list_contents(
     auth: AuthUser,
     Query(params): Query<ListParams>,
 ) -> Result<Json<PagedResponse<Content>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::System, Permission::Read)?;
 
     let pagination = params.pagination();
     let (limit, offset, page, per_page) = pagination.limit_offset();
@@ -68,7 +68,7 @@ async fn get_content(
     auth: AuthUser,
     Path(content_id): Path<i64>,
 ) -> Result<Json<Content>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::System, Permission::Read)?;
 
     let row = sqlx::query_as::<_, Content>(
         "SELECT content_id, content_title, content_desc, content_path, is_news, input_date, last_update, content_ownpage FROM content WHERE content_id = ?",
@@ -85,7 +85,7 @@ async fn get_content_by_path(
     auth: AuthUser,
     Path(content_path): Path<String>,
 ) -> Result<Json<Content>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::System, Permission::Read)?;
 
     let row = sqlx::query_as::<_, Content>(
         "SELECT content_id, content_title, content_desc, content_path, is_news, input_date, last_update, content_ownpage FROM content WHERE content_path = ?",

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 use crate::{
-    auth::{AuthUser, Role},
+    auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
     resources::{ListParams, PagedResponse},
@@ -34,7 +34,7 @@ async fn list_visitors(
     auth: AuthUser,
     Query(params): Query<ListParams>,
 ) -> Result<Json<PagedResponse<Visitor>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Membership, Permission::Read)?;
 
     let pagination = params.pagination();
     let (limit, offset, page, per_page) = pagination.limit_offset();
@@ -64,7 +64,7 @@ async fn get_visitor(
     auth: AuthUser,
     Path(visitor_id): Path<i64>,
 ) -> Result<Json<Visitor>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Membership, Permission::Read)?;
 
     let row = sqlx::query_as::<_, Visitor>(
         "SELECT visitor_id, member_id, member_name, institution, checkin_date FROM visitor_count WHERE visitor_id = ?",

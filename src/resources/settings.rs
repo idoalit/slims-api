@@ -8,7 +8,7 @@ use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 
 use crate::{
-    auth::{AuthUser, Role},
+    auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
     resources::{ListParams, PagedResponse},
@@ -39,7 +39,7 @@ async fn list_settings(
     auth: AuthUser,
     Query(params): Query<ListParams>,
 ) -> Result<Json<PagedResponse<SettingResponse>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::System, Permission::Read)?;
 
     let pagination = params.pagination();
     let (limit, offset, page, per_page) = pagination.limit_offset();
@@ -74,7 +74,7 @@ async fn get_setting(
     auth: AuthUser,
     Path(setting_path): Path<String>,
 ) -> Result<Json<SettingResponse>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::System, Permission::Read)?;
 
     let mut parts = setting_path.split('.').collect::<Vec<_>>();
     let base_name = parts.remove(0).to_string();

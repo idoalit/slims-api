@@ -9,7 +9,7 @@ use sqlx::FromRow;
 use std::collections::HashMap;
 
 use crate::{
-    auth::{AuthUser, Role},
+    auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
     resources::{ListParams, PagedResponse},
@@ -67,7 +67,7 @@ async fn list_loans(
     auth: AuthUser,
     Query(params): Query<ListParams>,
 ) -> Result<Json<PagedResponse<LoanResponse>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Circulation, Permission::Read)?;
 
     let pagination = params.pagination();
     let includes = params.includes();
@@ -142,7 +142,7 @@ async fn create_loan(
     auth: AuthUser,
     Json(payload): Json<CreateLoan>,
 ) -> Result<Json<Loan>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Circulation, Permission::Write)?;
 
     let today = chrono::Utc::now().date_naive();
 
@@ -171,7 +171,7 @@ async fn return_loan(
     Path(loan_id): Path<i64>,
     auth: AuthUser,
 ) -> Result<Json<Loan>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Circulation, Permission::Write)?;
 
     let today = chrono::Utc::now().date_naive();
 

@@ -12,7 +12,7 @@ use sqlx::{Column, FromRow, Row};
 use std::collections::HashMap;
 
 use crate::{
-    auth::{AuthUser, Role},
+    auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
     resources::{ListParams, PagedResponse},
@@ -108,7 +108,7 @@ async fn list_items(
     auth: AuthUser,
     Query(params): Query<ListParams>,
 ) -> Result<Json<PagedResponse<ItemResponse>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let pagination = params.pagination();
     let includes = params.includes();
@@ -263,7 +263,7 @@ async fn get_item(
     Path(item_id): Path<i64>,
     auth: AuthUser,
 ) -> Result<Json<ItemResponse>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let item = sqlx::query_as::<_, Item>(
         "SELECT item_id, item_code, biblio_id, call_number, coll_type_id, location_id, item_status_id, last_update FROM item WHERE item_id = ?",
@@ -374,7 +374,7 @@ async fn create_item(
     auth: AuthUser,
     Json(payload): Json<CreateItem>,
 ) -> Result<Json<Item>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Write)?;
 
     let now = chrono::Utc::now().naive_utc();
 
@@ -407,7 +407,7 @@ async fn update_item(
     auth: AuthUser,
     Json(payload): Json<CreateItem>,
 ) -> Result<Json<Item>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Write)?;
 
     let updated = sqlx::query(
         "UPDATE item SET item_code = ?, biblio_id = ?, call_number = ?, coll_type_id = ?, location_id = ?, item_status_id = ?, last_update = NOW() WHERE item_id = ?",
@@ -441,7 +441,7 @@ async fn delete_item(
     Path(item_id): Path<i64>,
     auth: AuthUser,
 ) -> Result<StatusCode, AppError> {
-    auth.require_roles(&[Role::Admin])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Write)?;
 
     sqlx::query("DELETE FROM item WHERE item_id = ?")
         .bind(item_id)

@@ -12,7 +12,7 @@ use sqlx::{Column, FromRow, Row};
 use std::collections::HashMap;
 
 use crate::{
-    auth::{AuthUser, Role},
+    auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
     resources::{ListParams, PagedResponse},
@@ -70,7 +70,7 @@ async fn list_members(
     auth: AuthUser,
     Query(params): Query<ListParams>,
 ) -> Result<Json<PagedResponse<MemberResponse>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Membership, Permission::Read)?;
 
     let pagination = params.pagination();
     let includes = params.includes();
@@ -147,7 +147,7 @@ async fn get_member(
     Path(member_id): Path<String>,
     auth: AuthUser,
 ) -> Result<Json<MemberResponse>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::Membership, Permission::Read)?;
 
     let member = sqlx::query_as::<_, Member>(
         "SELECT member_id, member_name, member_email, member_type_id, expire_date, is_pending FROM member WHERE member_id = ?",
@@ -205,7 +205,7 @@ async fn create_member(
     auth: AuthUser,
     Json(payload): Json<CreateMember>,
 ) -> Result<Json<Member>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian])?;
+    auth.require_access(ModuleAccess::Membership, Permission::Write)?;
 
     let gender = payload.gender.unwrap_or(0);
 
@@ -237,7 +237,7 @@ async fn update_member(
     auth: AuthUser,
     Json(payload): Json<CreateMember>,
 ) -> Result<Json<Member>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian])?;
+    auth.require_access(ModuleAccess::Membership, Permission::Write)?;
 
     let gender = payload.gender.unwrap_or(0);
 
@@ -273,7 +273,7 @@ async fn delete_member(
     Path(member_id): Path<String>,
     auth: AuthUser,
 ) -> Result<StatusCode, AppError> {
-    auth.require_roles(&[Role::Admin])?;
+    auth.require_access(ModuleAccess::Membership, Permission::Write)?;
 
     sqlx::query("DELETE FROM member WHERE member_id = ?")
         .bind(&member_id)

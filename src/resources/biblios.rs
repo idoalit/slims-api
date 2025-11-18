@@ -12,7 +12,7 @@ use sqlx::{Column, FromRow, Row};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    auth::{AuthUser, Role},
+    auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
     resources::{ListParams, PagedResponse},
@@ -538,7 +538,7 @@ async fn list_biblios(
     auth: AuthUser,
     Query(params): Query<ListParams>,
 ) -> Result<Json<PagedResponse<BiblioResponse>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let pagination = params.pagination();
     let includes = params.includes();
@@ -571,7 +571,7 @@ async fn simple_search_biblios(
     auth: AuthUser,
     Query(params): Query<SimpleSearchParams>,
 ) -> Result<Json<PagedResponse<BiblioResponse>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let keyword = params.q.trim();
     if keyword.is_empty() {
@@ -626,7 +626,7 @@ async fn advanced_search_biblios(
     auth: AuthUser,
     Json(payload): Json<AdvancedSearchPayload>,
 ) -> Result<Json<PagedResponse<BiblioResponse>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let clauses: Vec<&AdvancedClause> = payload
         .clauses
@@ -741,7 +741,7 @@ async fn get_biblio(
     Path(biblio_id): Path<i64>,
     auth: AuthUser,
 ) -> Result<Json<BiblioResponse>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let row = sqlx::query_as::<_, Biblio>(
         "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ?",
@@ -978,7 +978,7 @@ async fn create_biblio(
     auth: AuthUser,
     Json(payload): Json<UpsertBiblio>,
 ) -> Result<Json<Biblio>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Write)?;
 
     let now = chrono::Utc::now().naive_utc();
 
@@ -1013,7 +1013,7 @@ async fn update_biblio(
     auth: AuthUser,
     Json(payload): Json<UpsertBiblio>,
 ) -> Result<Json<Biblio>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Write)?;
 
     let now = chrono::Utc::now().naive_utc();
 
@@ -1051,7 +1051,7 @@ async fn delete_biblio(
     Path(biblio_id): Path<i64>,
     auth: AuthUser,
 ) -> Result<StatusCode, AppError> {
-    auth.require_roles(&[Role::Admin])?;
+    auth.require_access(ModuleAccess::Bibliography, Permission::Write)?;
 
     sqlx::query("DELETE FROM biblio WHERE biblio_id = ?")
         .bind(biblio_id)

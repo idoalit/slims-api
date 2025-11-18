@@ -7,7 +7,7 @@ use serde::Serialize;
 use sqlx::{FromRow, mysql::MySqlRow};
 
 use crate::{
-    auth::{AuthUser, Role},
+    auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
     resources::{PagedResponse, Pagination},
@@ -183,7 +183,7 @@ async fn member_types(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<MemberType>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -201,7 +201,7 @@ async fn coll_types(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<CollType>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -219,7 +219,7 @@ async fn locations(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<Location>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -237,7 +237,7 @@ async fn languages(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<Language>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -255,7 +255,7 @@ async fn gmds(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<Gmd>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -273,7 +273,7 @@ async fn item_statuses(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<ItemStatus>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -291,7 +291,7 @@ async fn frequencies(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<Frequency>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -309,7 +309,7 @@ async fn modules(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<Module>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -327,7 +327,7 @@ async fn places(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<Place>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -345,7 +345,7 @@ async fn publishers(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<Publisher>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -363,7 +363,7 @@ async fn suppliers(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<Supplier>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -381,7 +381,7 @@ async fn topics(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<Topic>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -399,7 +399,7 @@ async fn content_types(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<ContentType>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -417,7 +417,7 @@ async fn media_types(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<MediaType>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -435,7 +435,7 @@ async fn carrier_types(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<CarrierType>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -453,7 +453,7 @@ async fn relation_terms(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<RelationTerm>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
@@ -471,7 +471,7 @@ async fn loan_rules(
     auth: AuthUser,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<PagedResponse<LoanRule>>, AppError> {
-    auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
     let response = paged_lookup(
         &state,
