@@ -114,6 +114,13 @@ pub struct ItemSummary {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+pub struct BiblioRelationInfo {
+    pub biblio_id: i64,
+    pub title: String,
+    pub rel_type: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
 pub struct AuthorInfo {
     pub author_id: i64,
     pub author_name: String,
@@ -153,6 +160,8 @@ pub struct BiblioResponse {
     pub topics: Option<Vec<TopicInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub items: Option<Vec<ItemSummary>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relations: Option<Vec<BiblioRelationInfo>>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -388,6 +397,18 @@ async fn list_biblios(
             None
         };
 
+        let relations = if includes.contains("relations") {
+            let rows = sqlx::query_as::<_, BiblioRelationInfo>(
+                "SELECT br.rel_biblio_id AS biblio_id, b.title, br.rel_type FROM biblio_relation br JOIN biblio b ON b.biblio_id = br.rel_biblio_id WHERE br.biblio_id = ?",
+            )
+            .bind(biblio.biblio_id)
+            .fetch_all(&state.pool)
+            .await?;
+            Some(rows)
+        } else {
+            None
+        };
+
         data.push(BiblioResponse {
             biblio,
             gmd,
@@ -401,6 +422,7 @@ async fn list_biblios(
             authors,
             topics,
             items,
+            relations,
         });
     }
 
@@ -583,6 +605,18 @@ async fn get_biblio(
         None
     };
 
+    let relations = if includes.contains("relations") {
+        let rows = sqlx::query_as::<_, BiblioRelationInfo>(
+            "SELECT br.rel_biblio_id AS biblio_id, b.title, br.rel_type FROM biblio_relation br JOIN biblio b ON b.biblio_id = br.rel_biblio_id WHERE br.biblio_id = ?",
+        )
+        .bind(row.biblio_id)
+        .fetch_all(&state.pool)
+        .await?;
+        Some(rows)
+    } else {
+        None
+    };
+
     Ok(Json(BiblioResponse {
         biblio: row,
         gmd,
@@ -596,6 +630,7 @@ async fn get_biblio(
         authors,
         topics,
         items,
+        relations,
     }))
 }
 
