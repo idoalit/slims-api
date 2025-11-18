@@ -124,9 +124,10 @@ async fn list_members(
 
 async fn get_member(
     State(state): State<AppState>,
+    Query(params): Query<ListParams>,
     Path(member_id): Path<String>,
     auth: AuthUser,
-) -> Result<Json<Member>, AppError> {
+) -> Result<Json<MemberResponse>, AppError> {
     auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
 
     let member = sqlx::query_as::<_, Member>(
@@ -136,7 +137,23 @@ async fn get_member(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(member))
+    let includes = params.includes();
+    let mut member_type = None;
+    if includes.contains("member_type") {
+        if let Some(mt_id) = member.member_type_id {
+            member_type = sqlx::query_as::<_, MemberTypeInfo>(
+                "SELECT member_type_id, member_type_name, loan_limit, loan_periode FROM mst_member_type WHERE member_type_id = ?",
+            )
+            .bind(mt_id)
+            .fetch_optional(&state.pool)
+            .await?;
+        }
+    }
+
+    Ok(Json(MemberResponse {
+        member,
+        member_type,
+    }))
 }
 
 async fn create_member(

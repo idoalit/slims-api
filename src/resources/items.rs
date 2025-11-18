@@ -240,9 +240,10 @@ async fn list_items(
 
 async fn get_item(
     State(state): State<AppState>,
+    Query(params): Query<ListParams>,
     Path(item_id): Path<i64>,
     auth: AuthUser,
-) -> Result<Json<Item>, AppError> {
+) -> Result<Json<ItemResponse>, AppError> {
     auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
 
     let item = sqlx::query_as::<_, Item>(
@@ -252,7 +253,76 @@ async fn get_item(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(item))
+    let includes = params.includes();
+
+    let mut biblio = None;
+    if includes.contains("biblio") {
+        if let Some(biblio_id) = item.biblio_id {
+            biblio = sqlx::query_as::<_, BiblioSummary>(
+                "SELECT biblio_id, title FROM biblio WHERE biblio_id = ?",
+            )
+            .bind(biblio_id)
+            .fetch_optional(&state.pool)
+            .await?;
+        }
+    }
+
+    let mut coll_type = None;
+    if includes.contains("coll_type") {
+        if let Some(coll_type_id) = item.coll_type_id {
+            coll_type = sqlx::query_as::<_, CollTypeSummary>(
+                "SELECT coll_type_id, coll_type_name FROM mst_coll_type WHERE coll_type_id = ?",
+            )
+            .bind(coll_type_id)
+            .fetch_optional(&state.pool)
+            .await?;
+        }
+    }
+
+    let mut location = None;
+    if includes.contains("location") {
+        if let Some(loc_id) = item.location_id.clone() {
+            location = sqlx::query_as::<_, LocationSummary>(
+                "SELECT location_id, location_name FROM mst_location WHERE location_id = ?",
+            )
+            .bind(&loc_id)
+            .fetch_optional(&state.pool)
+            .await?;
+        }
+    }
+
+    let mut item_status = None;
+    if includes.contains("item_status") {
+        if let Some(status_id) = item.item_status_id.clone() {
+            item_status = sqlx::query_as::<_, ItemStatusSummary>(
+                "SELECT item_status_id, item_status_name, no_loan FROM mst_item_status WHERE item_status_id = ?",
+            )
+            .bind(&status_id)
+            .fetch_optional(&state.pool)
+            .await?;
+        }
+    }
+
+    let mut loan_status = None;
+    if includes.contains("loan_status") {
+        if let Some(code) = item.item_code.clone() {
+            loan_status = sqlx::query_as::<_, LoanStatusSummary>(
+                "SELECT loan_id, item_code, member_id, loan_date, due_date, is_return, return_date FROM loan WHERE item_code = ? AND is_return = 0 ORDER BY loan_date DESC LIMIT 1",
+            )
+            .bind(&code)
+            .fetch_optional(&state.pool)
+            .await?;
+        }
+    }
+
+    Ok(Json(ItemResponse {
+        item,
+        biblio,
+        coll_type,
+        location,
+        item_status,
+        loan_status,
+    }))
 }
 
 async fn create_item(

@@ -414,9 +414,10 @@ async fn list_biblios(
 
 async fn get_biblio(
     State(state): State<AppState>,
+    Query(params): Query<ListParams>,
     Path(biblio_id): Path<i64>,
     auth: AuthUser,
-) -> Result<Json<Biblio>, AppError> {
+) -> Result<Json<BiblioResponse>, AppError> {
     auth.require_roles(&[Role::Admin, Role::Librarian, Role::Staff, Role::Member])?;
 
     let row = sqlx::query_as::<_, Biblio>(
@@ -426,7 +427,176 @@ async fn get_biblio(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(row))
+    let includes = params.includes();
+
+    let gmd = if includes.contains("gmd") {
+        if let Some(gmd_id) = row.gmd_id {
+            sqlx::query_as::<_, GmdInfo>("SELECT gmd_id, gmd_name FROM mst_gmd WHERE gmd_id = ?")
+                .bind(gmd_id)
+                .fetch_optional(&state.pool)
+                .await?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let publisher = if includes.contains("publisher") {
+        if let Some(pub_id) = row.publisher_id {
+            sqlx::query_as::<_, PublisherInfo>(
+                "SELECT publisher_id, publisher_name FROM mst_publisher WHERE publisher_id = ?",
+            )
+            .bind(pub_id)
+            .fetch_optional(&state.pool)
+            .await?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let language = if includes.contains("language") {
+        if let Some(lang_id) = row.language_id.clone() {
+            sqlx::query_as::<_, LanguageInfo>(
+                "SELECT language_id, language_name FROM mst_language WHERE language_id = ?",
+            )
+            .bind(&lang_id)
+            .fetch_optional(&state.pool)
+            .await?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let content_type = if includes.contains("content_type") {
+        if let Some(ct_id) = row.content_type_id {
+            sqlx::query_as::<_, ContentTypeInfo>(
+                "SELECT id, content_type, code FROM mst_content_type WHERE id = ?",
+            )
+            .bind(ct_id)
+            .fetch_optional(&state.pool)
+            .await?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let media_type = if includes.contains("media_type") {
+        if let Some(mt_id) = row.media_type_id {
+            sqlx::query_as::<_, MediaTypeInfo>(
+                "SELECT id, media_type, code FROM mst_media_type WHERE id = ?",
+            )
+            .bind(mt_id)
+            .fetch_optional(&state.pool)
+            .await?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let carrier_type = if includes.contains("carrier_type") {
+        if let Some(ct_id) = row.carrier_type_id {
+            sqlx::query_as::<_, CarrierTypeInfo>(
+                "SELECT id, carrier_type, code FROM mst_carrier_type WHERE id = ?",
+            )
+            .bind(ct_id)
+            .fetch_optional(&state.pool)
+            .await?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let frequency = if includes.contains("frequency") {
+        if let Some(freq_id) = row.frequency_id {
+            sqlx::query_as::<_, FrequencyInfo>(
+                "SELECT frequency_id, frequency, language_prefix FROM mst_frequency WHERE frequency_id = ?",
+            )
+            .bind(freq_id)
+            .fetch_optional(&state.pool)
+            .await?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let place = if includes.contains("place") {
+        if let Some(place_id) = row.publish_place_id {
+            sqlx::query_as::<_, PlaceInfo>(
+                "SELECT place_id, place_name FROM mst_place WHERE place_id = ?",
+            )
+            .bind(place_id)
+            .fetch_optional(&state.pool)
+            .await?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let authors = if includes.contains("authors") {
+        let rows = sqlx::query_as::<_, AuthorInfo>(
+            "SELECT a.author_id, a.author_name, a.authority_type FROM biblio_author ba JOIN mst_author a ON ba.author_id = a.author_id WHERE ba.biblio_id = ?",
+        )
+        .bind(row.biblio_id)
+        .fetch_all(&state.pool)
+        .await?;
+        Some(rows)
+    } else {
+        None
+    };
+
+    let topics = if includes.contains("topics") {
+        let rows = sqlx::query_as::<_, TopicInfo>(
+            "SELECT t.topic_id, t.topic, t.topic_type FROM biblio_topic bt JOIN mst_topic t ON bt.topic_id = t.topic_id WHERE bt.biblio_id = ?",
+        )
+        .bind(row.biblio_id)
+        .fetch_all(&state.pool)
+        .await?;
+        Some(rows)
+    } else {
+        None
+    };
+
+    let items = if includes.contains("items") {
+        let rows = sqlx::query_as::<_, ItemSummary>(
+            "SELECT item_id, item_code, call_number, coll_type_id, location_id, item_status_id, last_update FROM item WHERE biblio_id = ? ORDER BY item_id DESC",
+        )
+        .bind(row.biblio_id)
+        .fetch_all(&state.pool)
+        .await?;
+        Some(rows)
+    } else {
+        None
+    };
+
+    Ok(Json(BiblioResponse {
+        biblio: row,
+        gmd,
+        publisher,
+        language,
+        content_type,
+        media_type,
+        carrier_type,
+        frequency,
+        place,
+        authors,
+        topics,
+        items,
+    }))
 }
 
 async fn create_biblio(
