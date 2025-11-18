@@ -54,6 +54,7 @@ fn build_router(state: AppState) -> Router {
         .nest("/lookups", resources::lookups::router())
         .nest("/visitors", resources::visitors::router())
         .nest("/files", resources::files::router())
+        .nest("/contents", resources::contents::router())
         .nest("/settings", resources::settings::router())
         .layer(TraceLayer::new_for_http())
         .layer(cors)

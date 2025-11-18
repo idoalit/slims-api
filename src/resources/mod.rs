@@ -6,6 +6,7 @@ pub mod members;
 pub mod visitors;
 pub mod files;
 pub mod settings;
+pub mod contents;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
