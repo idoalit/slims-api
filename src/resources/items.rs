@@ -7,9 +7,9 @@ use axum::{
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use sqlx::{FromRow, Row, Column};
-use std::collections::HashMap;
 use sqlx::mysql::MySqlRow;
+use sqlx::{Column, FromRow, Row};
+use std::collections::HashMap;
 
 use crate::{
     auth::{AuthUser, Role},
@@ -364,10 +364,7 @@ fn row_to_json(row: &MySqlRow) -> JsonValue {
     for (idx, col) in row.columns().iter().enumerate() {
         let key = col.name().to_string();
         let val: Option<String> = row.try_get(idx).ok();
-        map.insert(
-            key,
-            val.map(JsonValue::String).unwrap_or(JsonValue::Null),
-        );
+        map.insert(key, val.map(JsonValue::String).unwrap_or(JsonValue::Null));
     }
     JsonValue::Object(map)
 }

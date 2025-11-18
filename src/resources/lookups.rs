@@ -1,4 +1,8 @@
-use axum::{Json, Router, extract::{Query, State}, routing::get};
+use axum::{
+    Json, Router,
+    extract::{Query, State},
+    routing::get,
+};
 use serde::Serialize;
 use sqlx::{FromRow, mysql::MySqlRow};
 

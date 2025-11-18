@@ -1,12 +1,12 @@
 pub mod biblios;
+pub mod contents;
+pub mod files;
 pub mod items;
 pub mod loans;
 pub mod lookups;
 pub mod members;
-pub mod visitors;
-pub mod files;
 pub mod settings;
-pub mod contents;
+pub mod visitors;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

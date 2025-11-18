@@ -113,11 +113,12 @@ async fn list_loans(
             if let Some(code) = loan.item_code.clone() {
                 if let Some(existing) = item_cache.get(&code) {
                     item = Some(existing.clone());
-                } else if let Some(row) =
-                    sqlx::query_as::<_, LoanItem>("SELECT item_id, item_code FROM item WHERE item_code = ?")
-                        .bind(&code)
-                        .fetch_optional(&state.pool)
-                        .await?
+                } else if let Some(row) = sqlx::query_as::<_, LoanItem>(
+                    "SELECT item_id, item_code FROM item WHERE item_code = ?",
+                )
+                .bind(&code)
+                .fetch_optional(&state.pool)
+                .await?
                 {
                     item_cache.insert(code.clone(), row.clone());
                     item = Some(row);

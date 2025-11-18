@@ -176,8 +176,8 @@ fn unserialize(input: &str) -> Result<JsonValue, String> {
                         break;
                     }
                 }
-                let len_str = std::str::from_utf8(&bytes[len_start..*idx - 1])
-                    .map_err(|_| "invalid utf8")?;
+                let len_str =
+                    std::str::from_utf8(&bytes[len_start..*idx - 1]).map_err(|_| "invalid utf8")?;
                 let len: usize = len_str.parse().map_err(|_| "invalid length")?;
                 // opening quote may be escaped in dump (\"), accept optional backslash
                 match next_char(bytes, idx) {
