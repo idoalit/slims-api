@@ -600,17 +600,44 @@ async fn simple_search_biblios(
     let (limit, offset, page, per_page) = pagination.limit_offset();
     let pattern = format!("%{}%", keyword);
 
-    let count_query = "SELECT COUNT(DISTINCT b.biblio_id) FROM biblio b LEFT JOIN biblio_author ba ON ba.biblio_id = b.biblio_id LEFT JOIN mst_author a ON a.author_id = ba.author_id LEFT JOIN biblio_topic bt ON bt.biblio_id = b.biblio_id LEFT JOIN mst_topic t ON t.topic_id = bt.topic_id WHERE b.title LIKE ? OR a.author_name LIKE ? OR t.topic LIKE ?";
-    let total: i64 = sqlx::query_scalar(count_query)
+    // Use UNION to avoid OR, so each branch can leverage its own index.
+    let ids_subquery = r#"
+        SELECT biblio_id FROM biblio WHERE title LIKE ?
+        UNION
+        SELECT ba.biblio_id
+        FROM biblio_author ba
+        JOIN mst_author a ON a.author_id = ba.author_id
+        WHERE a.author_name LIKE ?
+        UNION
+        SELECT bt.biblio_id
+        FROM biblio_topic bt
+        JOIN mst_topic t ON t.topic_id = bt.topic_id
+        WHERE t.topic LIKE ?
+    "#;
+
+    let count_sql = format!("SELECT COUNT(*) FROM ({}) ids", ids_subquery);
+    let total: i64 = sqlx::query_scalar(&count_sql)
         .bind(&pattern)
         .bind(&pattern)
         .bind(&pattern)
         .fetch_one(&state.pool)
         .await?;
 
-    let data_query = "SELECT DISTINCT b.biblio_id, b.title, b.gmd_id, b.publisher_id, b.publish_year, b.language_id, b.content_type_id, b.media_type_id, b.carrier_type_id, b.frequency_id, b.publish_place_id, b.classification, b.call_number, b.opac_hide, b.promoted, b.input_date, b.last_update FROM biblio b LEFT JOIN biblio_author ba ON ba.biblio_id = b.biblio_id LEFT JOIN mst_author a ON a.author_id = ba.author_id LEFT JOIN biblio_topic bt ON bt.biblio_id = b.biblio_id LEFT JOIN mst_topic t ON t.topic_id = bt.topic_id WHERE b.title LIKE ? OR a.author_name LIKE ? OR t.topic LIKE ? ORDER BY b.biblio_id DESC LIMIT ? OFFSET ?";
+    let data_sql = format!(
+        r#"
+        SELECT b.biblio_id, b.title, b.gmd_id, b.publisher_id, b.publish_year, b.language_id,
+               b.content_type_id, b.media_type_id, b.carrier_type_id, b.frequency_id,
+               b.publish_place_id, b.classification, b.call_number, b.opac_hide,
+               b.promoted, b.input_date, b.last_update
+        FROM biblio b
+        JOIN ({}) ids ON ids.biblio_id = b.biblio_id
+        ORDER BY b.biblio_id DESC
+        LIMIT ? OFFSET ?
+        "#,
+        ids_subquery
+    );
 
-    let rows = sqlx::query_as::<_, Biblio>(data_query)
+    let rows = sqlx::query_as::<_, Biblio>(&data_sql)
         .bind(&pattern)
         .bind(&pattern)
         .bind(&pattern)
