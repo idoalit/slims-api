@@ -6,8 +6,10 @@ use axum::{
 };
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use serde_json::Value as JsonValue;
+use sqlx::{FromRow, Row, Column};
 use std::collections::HashMap;
+use sqlx::mysql::MySqlRow;
 
 use crate::{
     auth::{AuthUser, Role},
@@ -177,6 +179,8 @@ pub struct BiblioResponse {
     pub relations: Option<Vec<BiblioRelationInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<AttachmentInfo>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom: Option<JsonValue>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -222,6 +226,20 @@ async fn list_biblios(
     let mut data = Vec::with_capacity(rows.len());
 
     for biblio in rows {
+        let custom = if includes.contains("custom") {
+            if let Some(row) = sqlx::query("SELECT * FROM biblio_custom WHERE biblio_id = ?")
+                .bind(biblio.biblio_id)
+                .fetch_optional(&state.pool)
+                .await?
+            {
+                Some(row_to_json(&row))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let mut gmd = None;
         if includes.contains("gmd") {
             if let Some(gmd_id) = biblio.gmd_id {
@@ -451,6 +469,7 @@ async fn list_biblios(
             items,
             relations,
             attachments,
+            custom,
         });
     }
 
@@ -645,6 +664,20 @@ async fn get_biblio(
         None
     };
 
+    let custom = if includes.contains("custom") {
+        if let Some(row) = sqlx::query("SELECT * FROM biblio_custom WHERE biblio_id = ?")
+            .bind(row.biblio_id)
+            .fetch_optional(&state.pool)
+            .await?
+        {
+            Some(row_to_json(&row))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let relations = if includes.contains("relations") {
         let rows = sqlx::query_as::<_, BiblioRelationInfo>(
             "SELECT br.rel_biblio_id AS biblio_id, b.title, br.rel_type FROM biblio_relation br JOIN biblio b ON b.biblio_id = br.rel_biblio_id WHERE br.biblio_id = ?",
@@ -672,7 +705,21 @@ async fn get_biblio(
         items,
         relations,
         attachments,
+        custom,
     }))
+}
+
+fn row_to_json(row: &MySqlRow) -> JsonValue {
+    let mut map = serde_json::Map::new();
+    for (idx, col) in row.columns().iter().enumerate() {
+        let key = col.name().to_string();
+        let val: Option<String> = row.try_get(idx).ok();
+        map.insert(
+            key,
+            val.map(JsonValue::String).unwrap_or(JsonValue::Null),
+        );
+    }
+    JsonValue::Object(map)
 }
 
 async fn create_biblio(

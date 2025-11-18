@@ -6,8 +6,10 @@ use axum::{
 };
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use serde_json::Value as JsonValue;
+use sqlx::{FromRow, Row, Column};
 use std::collections::HashMap;
+use sqlx::mysql::MySqlRow;
 
 use crate::{
     auth::{AuthUser, Role},
@@ -77,6 +79,8 @@ pub struct ItemResponse {
     pub item_status: Option<ItemStatusSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loan_status: Option<LoanStatusSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom: Option<JsonValue>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
@@ -130,6 +134,20 @@ async fn list_items(
     let mut data = Vec::with_capacity(items.len());
 
     for item in items {
+        let custom = if includes.contains("custom") {
+            if let Some(row) = sqlx::query("SELECT * FROM item_custom WHERE item_id = ?")
+                .bind(item.item_id)
+                .fetch_optional(&state.pool)
+                .await?
+            {
+                Some(row_to_json(&row))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let mut biblio = None;
         if includes.contains("biblio") {
             if let Some(biblio_id) = item.biblio_id {
@@ -227,6 +245,7 @@ async fn list_items(
             location,
             item_status,
             loan_status,
+            custom,
         });
     }
 
@@ -315,6 +334,20 @@ async fn get_item(
         }
     }
 
+    let custom = if includes.contains("custom") {
+        if let Some(row) = sqlx::query("SELECT * FROM item_custom WHERE item_id = ?")
+            .bind(item.item_id)
+            .fetch_optional(&state.pool)
+            .await?
+        {
+            Some(row_to_json(&row))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     Ok(Json(ItemResponse {
         item,
         biblio,
@@ -322,7 +355,21 @@ async fn get_item(
         location,
         item_status,
         loan_status,
+        custom,
     }))
+}
+
+fn row_to_json(row: &MySqlRow) -> JsonValue {
+    let mut map = serde_json::Map::new();
+    for (idx, col) in row.columns().iter().enumerate() {
+        let key = col.name().to_string();
+        let val: Option<String> = row.try_get(idx).ok();
+        map.insert(
+            key,
+            val.map(JsonValue::String).unwrap_or(JsonValue::Null),
+        );
+    }
+    JsonValue::Object(map)
 }
 
 async fn create_item(
