@@ -10,6 +10,7 @@ use serde_json::Value as JsonValue;
 use sqlx::mysql::MySqlRow;
 use sqlx::{Column, FromRow, Row};
 use std::collections::HashMap;
+use utoipa::ToSchema;
 
 use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
@@ -18,7 +19,7 @@ use crate::{
     resources::{ListParams, PagedResponse},
 };
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Item {
     pub item_id: i64,
     pub item_code: Option<String>,
@@ -30,7 +31,7 @@ pub struct Item {
     pub last_update: Option<NaiveDateTime>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateItem {
     pub item_code: Option<String>,
     pub biblio_id: Option<i32>,
@@ -40,32 +41,32 @@ pub struct CreateItem {
     pub item_status_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct BiblioSummary {
     pub biblio_id: i64,
     pub title: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct CollTypeSummary {
     pub coll_type_id: i64,
     pub coll_type_name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct LocationSummary {
     pub location_id: String,
     pub location_name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct ItemStatusSummary {
     pub item_status_id: String,
     pub item_status_name: String,
     pub no_loan: i16,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ItemResponse {
     #[serde(flatten)]
     pub item: Item,
@@ -79,11 +80,12 @@ pub struct ItemResponse {
     pub item_status: Option<ItemStatusSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loan_status: Option<LoanStatusSummary>,
+    #[schema(value_type = Object)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom: Option<JsonValue>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct LoanStatusSummary {
     pub loan_id: i64,
     pub item_code: Option<String>,
@@ -103,6 +105,13 @@ pub fn router() -> Router<AppState> {
         )
 }
 
+#[utoipa::path(
+    get,
+    path = "/items",
+    responses((status = 200, body = PagedItems)),
+    security(("bearerAuth" = [])),
+    tag = "Items"
+)]
 async fn list_items(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -257,6 +266,14 @@ async fn list_items(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/items/{item_id}",
+    params(("item_id" = i64, Path, description = "Item ID")),
+    responses((status = 200, body = ItemResponse)),
+    security(("bearerAuth" = [])),
+    tag = "Items"
+)]
 async fn get_item(
     State(state): State<AppState>,
     Query(params): Query<ListParams>,
@@ -369,6 +386,14 @@ fn row_to_json(row: &MySqlRow) -> JsonValue {
     JsonValue::Object(map)
 }
 
+#[utoipa::path(
+    post,
+    path = "/items",
+    request_body = CreateItem,
+    responses((status = 200, body = Item)),
+    security(("bearerAuth" = [])),
+    tag = "Items"
+)]
 async fn create_item(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -401,6 +426,15 @@ async fn create_item(
     Ok(Json(rec))
 }
 
+#[utoipa::path(
+    put,
+    path = "/items/{item_id}",
+    params(("item_id" = i64, Path, description = "Item ID")),
+    request_body = CreateItem,
+    responses((status = 200, body = Item)),
+    security(("bearerAuth" = [])),
+    tag = "Items"
+)]
 async fn update_item(
     State(state): State<AppState>,
     Path(item_id): Path<i64>,
@@ -436,6 +470,14 @@ async fn update_item(
     Ok(Json(rec))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/items/{item_id}",
+    params(("item_id" = i64, Path, description = "Item ID")),
+    responses((status = 204, description = "Item deleted")),
+    security(("bearerAuth" = [])),
+    tag = "Items"
+)]
 async fn delete_item(
     State(state): State<AppState>,
     Path(item_id): Path<i64>,

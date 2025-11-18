@@ -6,6 +6,7 @@ use axum::{
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 
 use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
@@ -14,7 +15,7 @@ use crate::{
     resources::{ListParams, PagedResponse},
 };
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Visitor {
     pub visitor_id: i64,
     pub member_id: Option<String>,
@@ -29,6 +30,13 @@ pub fn router() -> Router<AppState> {
         .route("/:visitor_id", get(get_visitor))
 }
 
+#[utoipa::path(
+    get,
+    path = "/visitors",
+    responses((status = 200, body = PagedResponse<Visitor>)),
+    security(("bearerAuth" = [])),
+    tag = "Visitors"
+)]
 async fn list_visitors(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -59,6 +67,14 @@ async fn list_visitors(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/visitors/{visitor_id}",
+    params(("visitor_id" = i64, Path, description = "Visitor ID")),
+    responses((status = 200, body = Visitor)),
+    security(("bearerAuth" = [])),
+    tag = "Visitors"
+)]
 async fn get_visitor(
     State(state): State<AppState>,
     auth: AuthUser,

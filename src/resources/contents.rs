@@ -6,6 +6,7 @@ use axum::{
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 
 use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
@@ -14,7 +15,7 @@ use crate::{
     resources::{ListParams, PagedResponse},
 };
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Content {
     pub content_id: i64,
     pub content_title: String,
@@ -33,6 +34,13 @@ pub fn router() -> Router<AppState> {
         .route("/path/:content_path", get(get_content_by_path))
 }
 
+#[utoipa::path(
+    get,
+    path = "/contents",
+    responses((status = 200, body = PagedResponse<Content>)),
+    security(("bearerAuth" = [])),
+    tag = "Contents"
+)]
 async fn list_contents(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -63,6 +71,14 @@ async fn list_contents(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/contents/{content_id}",
+    params(("content_id" = i64, Path, description = "Content ID")),
+    responses((status = 200, body = Content)),
+    security(("bearerAuth" = [])),
+    tag = "Contents"
+)]
 async fn get_content(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -80,6 +96,14 @@ async fn get_content(
     Ok(Json(row))
 }
 
+#[utoipa::path(
+    get,
+    path = "/contents/path/{content_path}",
+    params(("content_path" = String, Path, description = "Content path slug")),
+    responses((status = 200, body = Content)),
+    security(("bearerAuth" = [])),
+    tag = "Contents"
+)]
 async fn get_content_by_path(
     State(state): State<AppState>,
     auth: AuthUser,

@@ -5,6 +5,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 
 use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
@@ -13,7 +14,7 @@ use crate::{
     resources::{ListParams, PagedResponse},
 };
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct FileObject {
     pub file_id: i64,
     pub file_title: String,
@@ -28,7 +29,7 @@ pub struct FileObject {
     pub last_update: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct FileBiblioAttachment {
     pub biblio_id: i64,
     pub title: String,
@@ -37,7 +38,7 @@ pub struct FileBiblioAttachment {
     pub access_limit: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct FileResponse {
     #[serde(flatten)]
     pub file: FileObject,
@@ -51,6 +52,13 @@ pub fn router() -> Router<AppState> {
         .route("/:file_id", get(get_file))
 }
 
+#[utoipa::path(
+    get,
+    path = "/files",
+    responses((status = 200, body = PagedResponse<FileResponse>)),
+    security(("bearerAuth" = [])),
+    tag = "Files"
+)]
 async fn list_files(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -100,6 +108,14 @@ async fn list_files(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/files/{file_id}",
+    params(("file_id" = i64, Path, description = "File ID")),
+    responses((status = 200, body = FileResponse)),
+    security(("bearerAuth" = [])),
+    tag = "Files"
+)]
 async fn get_file(
     State(state): State<AppState>,
     auth: AuthUser,

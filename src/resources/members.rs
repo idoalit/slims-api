@@ -10,6 +10,7 @@ use serde_json::Value as JsonValue;
 use sqlx::mysql::MySqlRow;
 use sqlx::{Column, FromRow, Row};
 use std::collections::HashMap;
+use utoipa::ToSchema;
 
 use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
@@ -18,7 +19,7 @@ use crate::{
     resources::{ListParams, PagedResponse},
 };
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Member {
     pub member_id: String,
     pub member_name: String,
@@ -28,7 +29,7 @@ pub struct Member {
     pub is_pending: i16,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateMember {
     pub member_id: String,
     pub member_name: String,
@@ -38,7 +39,7 @@ pub struct CreateMember {
     pub gender: Option<i16>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct MemberTypeInfo {
     pub member_type_id: i64,
     pub member_type_name: String,
@@ -46,12 +47,13 @@ pub struct MemberTypeInfo {
     pub loan_periode: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct MemberResponse {
     #[serde(flatten)]
     pub member: Member,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub member_type: Option<MemberTypeInfo>,
+    #[schema(value_type = Object)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom: Option<JsonValue>,
 }
@@ -65,6 +67,13 @@ pub fn router() -> Router<AppState> {
         )
 }
 
+#[utoipa::path(
+    get,
+    path = "/members",
+    responses((status = 200, description = "Paginated members", body = PagedMembers)),
+    security(("bearerAuth" = [])),
+    tag = "Members"
+)]
 async fn list_members(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -141,6 +150,14 @@ async fn list_members(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/members/{member_id}",
+    params(("member_id" = String, Path, description = "Member ID")),
+    responses((status = 200, body = MemberResponse)),
+    security(("bearerAuth" = [])),
+    tag = "Members"
+)]
 async fn get_member(
     State(state): State<AppState>,
     Query(params): Query<ListParams>,
@@ -200,6 +217,14 @@ fn row_to_json(row: &MySqlRow) -> JsonValue {
     JsonValue::Object(map)
 }
 
+#[utoipa::path(
+    post,
+    path = "/members",
+    request_body = CreateMember,
+    responses((status = 200, body = Member)),
+    security(("bearerAuth" = [])),
+    tag = "Members"
+)]
 async fn create_member(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -231,6 +256,15 @@ async fn create_member(
     Ok(Json(rec))
 }
 
+#[utoipa::path(
+    put,
+    path = "/members/{member_id}",
+    request_body = CreateMember,
+    params(("member_id" = String, Path, description = "Member ID")),
+    responses((status = 200, body = Member)),
+    security(("bearerAuth" = [])),
+    tag = "Members"
+)]
 async fn update_member(
     State(state): State<AppState>,
     Path(member_id): Path<String>,
@@ -268,6 +302,14 @@ async fn update_member(
     Ok(Json(rec))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/members/{member_id}",
+    params(("member_id" = String, Path, description = "Member ID")),
+    responses((status = 204, description = "Member deleted")),
+    security(("bearerAuth" = [])),
+    tag = "Members"
+)]
 async fn delete_member(
     State(state): State<AppState>,
     Path(member_id): Path<String>,

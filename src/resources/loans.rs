@@ -7,6 +7,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
+use utoipa::ToSchema;
 
 use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
@@ -15,7 +16,7 @@ use crate::{
     resources::{ListParams, PagedResponse},
 };
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Loan {
     pub loan_id: i64,
     pub item_code: Option<String>,
@@ -27,26 +28,26 @@ pub struct Loan {
     pub is_return: i32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateLoan {
     pub item_code: String,
     pub member_id: String,
     pub due_date: NaiveDate,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct LoanMember {
     pub member_id: String,
     pub member_name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct LoanItem {
     pub item_id: i64,
     pub item_code: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct LoanResponse {
     #[serde(flatten)]
     pub loan: Loan,
@@ -62,6 +63,13 @@ pub fn router() -> Router<AppState> {
         .route("/:loan_id/return", post(return_loan))
 }
 
+#[utoipa::path(
+    get,
+    path = "/loans",
+    responses((status = 200, body = PagedLoans)),
+    security(("bearerAuth" = [])),
+    tag = "Loans"
+)]
 async fn list_loans(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -137,6 +145,14 @@ async fn list_loans(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/loans",
+    request_body = CreateLoan,
+    responses((status = 200, body = Loan)),
+    security(("bearerAuth" = [])),
+    tag = "Loans"
+)]
 async fn create_loan(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -166,6 +182,14 @@ async fn create_loan(
     Ok(Json(rec))
 }
 
+#[utoipa::path(
+    post,
+    path = "/loans/{loan_id}/return",
+    params(("loan_id" = i64, Path, description = "Loan ID")),
+    responses((status = 200, body = Loan)),
+    security(("bearerAuth" = [])),
+    tag = "Loans"
+)]
 async fn return_loan(
     State(state): State<AppState>,
     Path(loan_id): Path<i64>,

@@ -6,6 +6,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::FromRow;
+use utoipa::ToSchema;
 
 use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
@@ -14,17 +15,18 @@ use crate::{
     resources::{ListParams, PagedResponse},
 };
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct SettingRow {
     pub setting_id: i64,
     pub setting_name: String,
     pub setting_value: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SettingResponse {
     pub setting_name: String,
     pub raw_value: Option<String>,
+    #[schema(value_type = Object)]
     pub parsed_value: Option<JsonValue>,
 }
 
@@ -34,6 +36,13 @@ pub fn router() -> Router<AppState> {
         .route("/:setting_name", get(get_setting))
 }
 
+#[utoipa::path(
+    get,
+    path = "/settings",
+    responses((status = 200, body = PagedResponse<SettingResponse>)),
+    security(("bearerAuth" = [])),
+    tag = "Settings"
+)]
 async fn list_settings(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -69,6 +78,14 @@ async fn list_settings(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/settings/{setting_name}",
+    params(("setting_name" = String, Path, description = "Setting key; use dot notation for nested paths")),
+    responses((status = 200, body = SettingResponse)),
+    security(("bearerAuth" = [])),
+    tag = "Settings"
+)]
 async fn get_setting(
     State(state): State<AppState>,
     auth: AuthUser,

@@ -8,14 +8,21 @@ pub mod members;
 pub mod settings;
 pub mod visitors;
 
+use crate::resources::{
+    biblios::BiblioResponse,
+    items::ItemResponse,
+    loans::LoanResponse,
+    members::MemberResponse,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use utoipa::ToSchema;
 
 const DEFAULT_PAGE: u32 = 1;
 const DEFAULT_PER_PAGE: u32 = 20;
 const MAX_PER_PAGE: u32 = 100;
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy, ToSchema)]
 pub struct Pagination {
     pub page: Option<u32>,
     pub per_page: Option<u32>,
@@ -38,7 +45,7 @@ impl Pagination {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, ToSchema)]
 pub struct ListParams {
     pub page: Option<u32>,
     pub per_page: Option<u32>,
@@ -70,9 +77,49 @@ pub fn parse_include(raw: Option<String>) -> HashSet<String> {
     .unwrap_or_default()
 }
 
-#[derive(Debug, Serialize)]
-pub struct PagedResponse<T> {
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PagedResponse<T>
+where
+    T: ToSchema<'static> + Serialize + 'static,
+{
+    #[schema(value_type = Vec<T>)]
     pub data: Vec<T>,
+    pub page: u32,
+    pub per_page: u32,
+    pub total: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PagedMembers {
+    #[schema(value_type = Vec<MemberResponse>)]
+    pub data: Vec<MemberResponse>,
+    pub page: u32,
+    pub per_page: u32,
+    pub total: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PagedItems {
+    #[schema(value_type = Vec<ItemResponse>)]
+    pub data: Vec<ItemResponse>,
+    pub page: u32,
+    pub per_page: u32,
+    pub total: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PagedLoans {
+    #[schema(value_type = Vec<LoanResponse>)]
+    pub data: Vec<LoanResponse>,
+    pub page: u32,
+    pub per_page: u32,
+    pub total: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PagedBiblios {
+    #[schema(value_type = Vec<BiblioResponse>)]
+    pub data: Vec<BiblioResponse>,
     pub page: u32,
     pub per_page: u32,
     pub total: i64,

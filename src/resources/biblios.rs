@@ -10,6 +10,7 @@ use serde_json::Value as JsonValue;
 use sqlx::mysql::MySqlRow;
 use sqlx::{Column, FromRow, Row};
 use std::collections::{HashMap, HashSet};
+use utoipa::ToSchema;
 
 use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
@@ -18,7 +19,7 @@ use crate::{
     resources::{ListParams, PagedResponse},
 };
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Biblio {
     pub biblio_id: i64,
     pub title: String,
@@ -39,7 +40,7 @@ pub struct Biblio {
     pub last_update: Option<NaiveDateTime>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpsertBiblio {
     pub title: String,
     pub gmd_id: Option<i32>,
@@ -52,59 +53,59 @@ pub struct UpsertBiblio {
     pub promoted: Option<i16>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct GmdInfo {
     pub gmd_id: i64,
     pub gmd_name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct PublisherInfo {
     pub publisher_id: i64,
     pub publisher_name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct LanguageInfo {
     pub language_id: String,
     pub language_name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct ContentTypeInfo {
     pub id: i64,
     pub content_type: String,
     pub code: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct MediaTypeInfo {
     pub id: i64,
     pub media_type: String,
     pub code: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct CarrierTypeInfo {
     pub id: i64,
     pub carrier_type: String,
     pub code: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct FrequencyInfo {
     pub frequency_id: i64,
     pub frequency: String,
     pub language_prefix: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct PlaceInfo {
     pub place_id: i64,
     pub place_name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct ItemSummary {
     pub item_id: i64,
     pub item_code: Option<String>,
@@ -115,7 +116,7 @@ pub struct ItemSummary {
     pub last_update: Option<NaiveDateTime>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct AttachmentInfo {
     pub file_id: i64,
     pub file_title: String,
@@ -128,28 +129,28 @@ pub struct AttachmentInfo {
     pub access_limit: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct BiblioRelationInfo {
     pub biblio_id: i64,
     pub title: String,
     pub rel_type: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct AuthorInfo {
     pub author_id: i64,
     pub author_name: String,
     pub authority_type: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct TopicInfo {
     pub topic_id: i64,
     pub topic: String,
     pub topic_type: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BiblioResponse {
     #[serde(flatten)]
     pub biblio: Biblio,
@@ -179,6 +180,7 @@ pub struct BiblioResponse {
     pub relations: Option<Vec<BiblioRelationInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<AttachmentInfo>>,
+    #[schema(value_type = Object)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom: Option<JsonValue>,
 }
@@ -194,14 +196,14 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SimpleSearchParams {
     pub q: String,
     #[serde(flatten)]
     pub list: ListParams,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum BooleanOp {
     And,
@@ -223,7 +225,7 @@ impl BooleanOp {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MatchType {
     Contains,
@@ -238,7 +240,7 @@ impl Default for MatchType {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchField {
     Title,
@@ -250,7 +252,7 @@ pub enum SearchField {
     Classification,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, ToSchema)]
 pub struct AdvancedClause {
     pub field: SearchField,
     pub value: String,
@@ -260,7 +262,7 @@ pub struct AdvancedClause {
     pub r#type: MatchType,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, ToSchema)]
 pub struct AdvancedSearchPayload {
     pub clauses: Vec<AdvancedClause>,
     #[serde(flatten)]
@@ -533,6 +535,13 @@ async fn enrich_biblios(
     Ok(data)
 }
 
+#[utoipa::path(
+    get,
+    path = "/biblios",
+    responses((status = 200, body = PagedBiblios)),
+    security(("bearerAuth" = [])),
+    tag = "Biblios"
+)]
 async fn list_biblios(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -566,6 +575,14 @@ async fn list_biblios(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/biblios/search",
+    params(("q" = String, Query, description = "Kata kunci pencarian", example = "rust")),
+    responses((status = 200, body = PagedBiblios)),
+    security(("bearerAuth" = [])),
+    tag = "Biblios"
+)]
 async fn simple_search_biblios(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -621,6 +638,14 @@ fn match_pattern(value: &str, matcher: MatchType) -> String {
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/biblios/search/advanced",
+    request_body = AdvancedSearchPayload,
+    responses((status = 200, body = PagedBiblios)),
+    security(("bearerAuth" = [])),
+    tag = "Biblios"
+)]
 async fn advanced_search_biblios(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -735,6 +760,14 @@ async fn advanced_search_biblios(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/biblios/{biblio_id}",
+    params(("biblio_id" = i64, Path, description = "Biblio ID")),
+    responses((status = 200, body = BiblioResponse)),
+    security(("bearerAuth" = [])),
+    tag = "Biblios"
+)]
 async fn get_biblio(
     State(state): State<AppState>,
     Query(params): Query<ListParams>,
@@ -973,6 +1006,14 @@ fn row_to_json(row: &MySqlRow) -> JsonValue {
     JsonValue::Object(map)
 }
 
+#[utoipa::path(
+    post,
+    path = "/biblios",
+    request_body = UpsertBiblio,
+    responses((status = 200, body = Biblio)),
+    security(("bearerAuth" = [])),
+    tag = "Biblios"
+)]
 async fn create_biblio(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -1007,6 +1048,15 @@ async fn create_biblio(
     Ok(Json(rec))
 }
 
+#[utoipa::path(
+    put,
+    path = "/biblios/{biblio_id}",
+    params(("biblio_id" = i64, Path, description = "Biblio ID")),
+    request_body = UpsertBiblio,
+    responses((status = 200, body = Biblio)),
+    security(("bearerAuth" = [])),
+    tag = "Biblios"
+)]
 async fn update_biblio(
     State(state): State<AppState>,
     Path(biblio_id): Path<i64>,
@@ -1046,6 +1096,14 @@ async fn update_biblio(
     Ok(Json(rec))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/biblios/{biblio_id}",
+    params(("biblio_id" = i64, Path, description = "Biblio ID")),
+    responses((status = 204, description = "Biblio deleted")),
+    security(("bearerAuth" = [])),
+    tag = "Biblios"
+)]
 async fn delete_biblio(
     State(state): State<AppState>,
     Path(biblio_id): Path<i64>,

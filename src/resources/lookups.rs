@@ -5,6 +5,7 @@ use axum::{
 };
 use serde::Serialize;
 use sqlx::{FromRow, mysql::MySqlRow};
+use utoipa::ToSchema;
 
 use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
@@ -13,7 +14,7 @@ use crate::{
     resources::{PagedResponse, Pagination},
 };
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct MemberType {
     pub member_type_id: i64,
     pub member_type_name: String,
@@ -21,46 +22,46 @@ pub struct MemberType {
     pub loan_periode: i64,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct CollType {
     pub coll_type_id: i64,
     pub coll_type_name: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Location {
     pub location_id: String,
     pub location_name: Option<String>,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Language {
     pub language_id: String,
     pub language_name: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Gmd {
     pub gmd_id: i64,
     pub gmd_code: Option<String>,
     pub gmd_name: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct ItemStatus {
     pub item_status_id: String,
     pub item_status_name: String,
     pub no_loan: i16,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Frequency {
     pub frequency_id: i64,
     pub frequency: String,
     pub language_prefix: Option<String>,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Module {
     pub module_id: i64,
     pub module_name: String,
@@ -68,59 +69,59 @@ pub struct Module {
     pub module_desc: Option<String>,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Place {
     pub place_id: i64,
     pub place_name: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Publisher {
     pub publisher_id: i64,
     pub publisher_name: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Supplier {
     pub supplier_id: i64,
     pub supplier_name: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Topic {
     pub topic_id: i64,
     pub topic: String,
     pub topic_type: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct ContentType {
     pub id: i64,
     pub content_type: String,
     pub code: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct MediaType {
     pub id: i64,
     pub media_type: String,
     pub code: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct CarrierType {
     pub id: i64,
     pub carrier_type: String,
     pub code: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct RelationTerm {
     pub rt_id: String,
     pub rt_desc: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct LoanRule {
     pub loan_rules_id: i64,
     pub member_type_id: i64,
@@ -136,7 +137,7 @@ async fn paged_lookup<T>(
     count_query: &str,
 ) -> Result<PagedResponse<T>, AppError>
 where
-    for<'r> T: FromRow<'r, MySqlRow> + Send + Unpin,
+    for<'r> T: FromRow<'r, MySqlRow> + Send + Unpin + Serialize + ToSchema<'static> + 'static,
 {
     let (limit, offset, page, per_page) = pagination.limit_offset();
     let total: i64 = sqlx::query_scalar(count_query)
@@ -178,6 +179,13 @@ pub fn router() -> Router<AppState> {
         .route("/loan-rules", get(loan_rules))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/member-types",
+    responses((status = 200, body = PagedResponse<MemberType>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn member_types(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -196,6 +204,13 @@ async fn member_types(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/coll-types",
+    responses((status = 200, body = PagedResponse<CollType>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn coll_types(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -214,6 +229,13 @@ async fn coll_types(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/locations",
+    responses((status = 200, body = PagedResponse<Location>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn locations(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -232,6 +254,13 @@ async fn locations(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/languages",
+    responses((status = 200, body = PagedResponse<Language>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn languages(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -250,6 +279,13 @@ async fn languages(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/gmd",
+    responses((status = 200, body = PagedResponse<Gmd>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn gmds(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -268,6 +304,13 @@ async fn gmds(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/item-statuses",
+    responses((status = 200, body = PagedResponse<ItemStatus>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn item_statuses(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -286,6 +329,13 @@ async fn item_statuses(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/frequencies",
+    responses((status = 200, body = PagedResponse<Frequency>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn frequencies(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -304,6 +354,13 @@ async fn frequencies(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/modules",
+    responses((status = 200, body = PagedResponse<Module>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn modules(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -322,6 +379,13 @@ async fn modules(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/places",
+    responses((status = 200, body = PagedResponse<Place>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn places(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -340,6 +404,13 @@ async fn places(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/publishers",
+    responses((status = 200, body = PagedResponse<Publisher>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn publishers(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -358,6 +429,13 @@ async fn publishers(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/suppliers",
+    responses((status = 200, body = PagedResponse<Supplier>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn suppliers(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -376,6 +454,13 @@ async fn suppliers(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/topics",
+    responses((status = 200, body = PagedResponse<Topic>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn topics(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -394,6 +479,13 @@ async fn topics(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/content-types",
+    responses((status = 200, body = PagedResponse<ContentType>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn content_types(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -412,6 +504,13 @@ async fn content_types(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/media-types",
+    responses((status = 200, body = PagedResponse<MediaType>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn media_types(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -430,6 +529,13 @@ async fn media_types(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/carrier-types",
+    responses((status = 200, body = PagedResponse<CarrierType>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn carrier_types(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -448,6 +554,13 @@ async fn carrier_types(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/relation-terms",
+    responses((status = 200, body = PagedResponse<RelationTerm>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn relation_terms(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -466,6 +579,13 @@ async fn relation_terms(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/lookups/loan-rules",
+    responses((status = 200, body = PagedResponse<LoanRule>)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
 async fn loan_rules(
     State(state): State<AppState>,
     auth: AuthUser,

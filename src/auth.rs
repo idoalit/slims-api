@@ -12,10 +12,11 @@ use bcrypt::verify;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, QueryBuilder};
+use utoipa::ToSchema;
 
 use crate::{config::AppState, error::AppError};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Admin,
@@ -38,7 +39,7 @@ impl TryFrom<String> for Role {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct Claims {
     pub sub: i64,
     pub username: String,
@@ -48,13 +49,13 @@ pub struct Claims {
     pub exp: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ToSchema)]
 pub enum Permission {
     Read,
     Write,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ToSchema)]
 #[allow(dead_code)]
 #[repr(i64)]
 pub enum ModuleAccess {
@@ -74,7 +75,7 @@ impl ModuleAccess {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub struct ModulePermission {
     pub module_id: i64,
     pub read: bool,
@@ -158,13 +159,13 @@ fn extract_bearer(headers: &HeaderMap) -> Result<String, AppError> {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AuthResponse {
     pub token: String,
     pub expires_at: usize,
@@ -181,6 +182,16 @@ pub struct User {
     pub user_type: Option<i16>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/auth/login",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login success", body = AuthResponse),
+        (status = 401, description = "Invalid credentials"),
+    ),
+    tag = "Auth"
+)]
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
