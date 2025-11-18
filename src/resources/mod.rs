@@ -3,6 +3,9 @@ pub mod items;
 pub mod loans;
 pub mod lookups;
 pub mod members;
+pub mod visitors;
+pub mod files;
+pub mod settings;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

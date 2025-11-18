@@ -114,6 +114,19 @@ pub struct ItemSummary {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+pub struct AttachmentInfo {
+    pub file_id: i64,
+    pub file_title: String,
+    pub file_name: String,
+    pub file_url: Option<String>,
+    pub file_dir: Option<String>,
+    pub mime_type: Option<String>,
+    pub placement: Option<String>,
+    pub access_type: String,
+    pub access_limit: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
 pub struct BiblioRelationInfo {
     pub biblio_id: i64,
     pub title: String,
@@ -162,6 +175,8 @@ pub struct BiblioResponse {
     pub items: Option<Vec<ItemSummary>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relations: Option<Vec<BiblioRelationInfo>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<AttachmentInfo>>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -397,6 +412,18 @@ async fn list_biblios(
             None
         };
 
+        let attachments = if includes.contains("attachments") || includes.contains("files") {
+            let rows = sqlx::query_as::<_, AttachmentInfo>(
+                "SELECT f.file_id, f.file_title, f.file_name, f.file_url, f.file_dir, f.mime_type, ba.placement, ba.access_type, ba.access_limit FROM biblio_attachment ba JOIN files f ON f.file_id = ba.file_id WHERE ba.biblio_id = ? ORDER BY ba.file_id DESC",
+            )
+            .bind(biblio.biblio_id)
+            .fetch_all(&state.pool)
+            .await?;
+            Some(rows)
+        } else {
+            None
+        };
+
         let relations = if includes.contains("relations") {
             let rows = sqlx::query_as::<_, BiblioRelationInfo>(
                 "SELECT br.rel_biblio_id AS biblio_id, b.title, br.rel_type FROM biblio_relation br JOIN biblio b ON b.biblio_id = br.rel_biblio_id WHERE br.biblio_id = ?",
@@ -423,6 +450,7 @@ async fn list_biblios(
             topics,
             items,
             relations,
+            attachments,
         });
     }
 
@@ -605,6 +633,18 @@ async fn get_biblio(
         None
     };
 
+    let attachments = if includes.contains("attachments") || includes.contains("files") {
+        let rows = sqlx::query_as::<_, AttachmentInfo>(
+            "SELECT f.file_id, f.file_title, f.file_name, f.file_url, f.file_dir, f.mime_type, ba.placement, ba.access_type, ba.access_limit FROM biblio_attachment ba JOIN files f ON f.file_id = ba.file_id WHERE ba.biblio_id = ? ORDER BY ba.file_id DESC",
+        )
+        .bind(row.biblio_id)
+        .fetch_all(&state.pool)
+        .await?;
+        Some(rows)
+    } else {
+        None
+    };
+
     let relations = if includes.contains("relations") {
         let rows = sqlx::query_as::<_, BiblioRelationInfo>(
             "SELECT br.rel_biblio_id AS biblio_id, b.title, br.rel_type FROM biblio_relation br JOIN biblio b ON b.biblio_id = br.rel_biblio_id WHERE br.biblio_id = ?",
@@ -631,6 +671,7 @@ async fn get_biblio(
         topics,
         items,
         relations,
+        attachments,
     }))
 }
 
