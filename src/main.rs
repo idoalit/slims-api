@@ -1,15 +1,13 @@
 mod auth;
 mod config;
 mod error;
+mod jsonapi;
 mod resources;
 
 use std::net::SocketAddr;
 
-use axum::{
-    Router,
-    response::Html,
-    routing::{get, post},
-};
+use axum::{Json, Router, routing::{get, post}};
+use serde_json::json;
 use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::EnvFilter;
@@ -21,6 +19,7 @@ use crate::{
     auth::extract_secret,
     auth::login,
     config::{AppConfig, AppState, init_pool},
+    jsonapi::{JsonApiDocument, resource, single_document},
 };
 
 #[derive(OpenApi)]
@@ -139,10 +138,9 @@ use crate::{
         resources::lookups::LoanRule,
         resources::visitors::Visitor,
         resources::settings::SettingResponse,
-        resources::PagedMembers,
-        resources::PagedItems,
-        resources::PagedLoans,
-        resources::PagedBiblios,
+        jsonapi::JsonApiDocument,
+        jsonapi::JsonApiError,
+        jsonapi::JsonApiErrorDocument,
     )),
     tags(
         (name = "Auth", description = "Autentikasi"),
@@ -223,9 +221,9 @@ fn build_router(state: AppState) -> Router {
 #[utoipa::path(
     get,
     path = "/health",
-    responses((status = 200, description = "Health check")),
+    responses((status = 200, description = "Health check", body = JsonApiDocument)),
     tag = "Health"
 )]
-async fn health() -> Html<&'static str> {
-    Html("OK")
+async fn health() -> Json<JsonApiDocument> {
+    Json(single_document(resource("health", "health", json!({ "status": "ok" }))))
 }

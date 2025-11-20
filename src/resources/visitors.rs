@@ -12,7 +12,11 @@ use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
-    resources::{ListParams, PagedResponse},
+    jsonapi::{
+        JsonApiDocument, collection_document, pagination_meta, resource_with_fields,
+        single_document,
+    },
+    resources::ListParams,
 };
 
 #[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
@@ -33,7 +37,7 @@ pub fn router() -> Router<AppState> {
 #[utoipa::path(
     get,
     path = "/visitors",
-    responses((status = 200, body = PagedResponse<Visitor>)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Visitors"
 )]
@@ -41,10 +45,11 @@ async fn list_visitors(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(params): Query<ListParams>,
-) -> Result<Json<PagedResponse<Visitor>>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Membership, Permission::Read)?;
 
     let pagination = params.pagination();
+    let visitor_fields = params.fieldset("visitors");
     let (limit, offset, page, per_page) = pagination.limit_offset();
 
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM visitor_count")
@@ -59,27 +64,38 @@ async fn list_visitors(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(PagedResponse {
-        data: rows,
-        page,
-        per_page,
-        total,
-    }))
+    let data = rows
+        .into_iter()
+        .map(|visitor| {
+            resource_with_fields(
+                "visitors",
+                visitor.visitor_id.to_string(),
+                visitor,
+                visitor_fields,
+            )
+        })
+        .collect();
+
+    Ok(Json(collection_document(
+        data,
+        pagination_meta(page, per_page, total),
+    )))
 }
 
 #[utoipa::path(
     get,
     path = "/visitors/{visitor_id}",
     params(("visitor_id" = i64, Path, description = "Visitor ID")),
-    responses((status = 200, body = Visitor)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Visitors"
 )]
 async fn get_visitor(
     State(state): State<AppState>,
+    Query(params): Query<ListParams>,
     auth: AuthUser,
     Path(visitor_id): Path<i64>,
-) -> Result<Json<Visitor>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Membership, Permission::Read)?;
 
     let row = sqlx::query_as::<_, Visitor>(
@@ -89,5 +105,11 @@ async fn get_visitor(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(row))
+    let visitor_fields = params.fieldset("visitors");
+    Ok(Json(single_document(resource_with_fields(
+        "visitors",
+        row.visitor_id.to_string(),
+        row,
+        visitor_fields,
+    ))))
 }

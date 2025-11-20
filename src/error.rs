@@ -5,6 +5,8 @@ use axum::{
 };
 use thiserror::Error;
 
+use crate::jsonapi::{JsonApiError, JsonApiErrorDocument};
+
 #[derive(Error, Debug)]
 #[allow(dead_code)]
 pub enum AppError {
@@ -26,23 +28,53 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, message) = match &self {
-            AppError::Unauthorized(_) => (StatusCode::UNAUTHORIZED, self.to_string()),
-            AppError::Forbidden(_) => (StatusCode::FORBIDDEN, self.to_string()),
-            AppError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
-            AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+        let (status, title, detail) = match &self {
+            AppError::Unauthorized(message) => (
+                StatusCode::UNAUTHORIZED,
+                "Unauthorized",
+                Some(message.clone()),
+            ),
+            AppError::Forbidden(message) => (
+                StatusCode::FORBIDDEN,
+                "Forbidden",
+                Some(message.clone()),
+            ),
+            AppError::NotFound => (StatusCode::NOT_FOUND, "Not Found", Some("not found".into())),
+            AppError::BadRequest(message) => (
+                StatusCode::BAD_REQUEST,
+                "Bad Request",
+                Some(message.clone()),
+            ),
             AppError::Database(err) => {
                 if let sqlx::Error::RowNotFound = err {
-                    (StatusCode::NOT_FOUND, "not found".into())
+                    (StatusCode::NOT_FOUND, "Not Found", Some("not found".into()))
                 } else {
-                    (StatusCode::INTERNAL_SERVER_ERROR, "database error".into())
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Database Error",
+                        None,
+                    )
                 }
             }
-            AppError::Jwt(_) => (StatusCode::UNAUTHORIZED, "invalid token".into()),
-            AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal error".into()),
+            AppError::Jwt(_) => (
+                StatusCode::UNAUTHORIZED,
+                "Invalid Token",
+                Some("invalid token".into()),
+            ),
+            AppError::Internal(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal Error",
+                None,
+            ),
         };
 
-        let body = Json(serde_json::json!({ "error": message }));
+        let error = JsonApiError {
+            status: status.as_u16().to_string(),
+            title: Some(title.into()),
+            detail,
+        };
+
+        let body = Json(JsonApiErrorDocument { errors: vec![error] });
         (status, body).into_response()
     }
 }

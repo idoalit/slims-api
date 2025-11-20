@@ -12,7 +12,11 @@ use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
-    resources::{ListParams, PagedResponse},
+    jsonapi::{
+        JsonApiDocument, collection_document, pagination_meta, resource_with_fields,
+        single_document,
+    },
+    resources::ListParams,
 };
 
 #[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
@@ -39,7 +43,7 @@ pub fn router() -> Router<AppState> {
 #[utoipa::path(
     get,
     path = "/settings",
-    responses((status = 200, body = PagedResponse<SettingResponse>)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Settings"
 )]
@@ -47,7 +51,7 @@ async fn list_settings(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(params): Query<ListParams>,
-) -> Result<Json<PagedResponse<SettingResponse>>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::System, Permission::Read)?;
 
     let pagination = params.pagination();
@@ -65,32 +69,36 @@ async fn list_settings(
     .fetch_all(&state.pool)
     .await?;
 
-    let data = rows
+    let setting_fields = params.fieldset("settings");
+    let documents = rows
         .into_iter()
         .map(to_setting_response)
-        .collect::<Vec<_>>();
+        .map(|setting| {
+            let name = setting.setting_name.clone();
+            resource_with_fields("settings", name, setting, setting_fields)
+        })
+        .collect();
 
-    Ok(Json(PagedResponse {
-        data,
-        page,
-        per_page,
-        total,
-    }))
+    Ok(Json(collection_document(
+        documents,
+        pagination_meta(page, per_page, total),
+    )))
 }
 
 #[utoipa::path(
     get,
     path = "/settings/{setting_name}",
     params(("setting_name" = String, Path, description = "Setting key; use dot notation for nested paths")),
-    responses((status = 200, body = SettingResponse)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Settings"
 )]
 async fn get_setting(
     State(state): State<AppState>,
     auth: AuthUser,
+    Query(params): Query<ListParams>,
     Path(setting_path): Path<String>,
-) -> Result<Json<SettingResponse>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::System, Permission::Read)?;
 
     let mut parts = setting_path.split('.').collect::<Vec<_>>();
@@ -118,7 +126,14 @@ async fn get_setting(
         resp.setting_name = setting_path;
     }
 
-    Ok(Json(resp))
+    let id = resp.setting_name.clone();
+    let setting_fields = params.fieldset("settings");
+    Ok(Json(single_document(resource_with_fields(
+        "settings",
+        id,
+        resp,
+        setting_fields,
+    ))))
 }
 
 fn to_setting_response(row: SettingRow) -> SettingResponse {

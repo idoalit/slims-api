@@ -16,7 +16,14 @@ use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
-    resources::{ListParams, PagedResponse},
+    jsonapi::{
+        JsonApiDocument, collection_document, pagination_meta, resource, resource_with_fields,
+        single_document,
+    },
+    resources::{
+        bind_filters_to_query, bind_filters_to_scalar, where_clause, FilterField, FilterOperator,
+        FilterValueType, ListParams, SortField,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
@@ -184,6 +191,34 @@ pub struct BiblioResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom: Option<JsonValue>,
 }
+
+const BIBLIO_SORTS: &[SortField<'_>] = &[
+    SortField::new("biblio_id", "biblio.biblio_id"),
+    SortField::new("title", "biblio.title"),
+    SortField::new("input_date", "biblio.input_date"),
+    SortField::new("last_update", "biblio.last_update"),
+];
+
+const BIBLIO_FILTERS: &[FilterField<'_>] = &[
+    FilterField::new(
+        "title",
+        "biblio.title",
+        FilterOperator::Like,
+        FilterValueType::Text,
+    ),
+    FilterField::new(
+        "gmd_id",
+        "biblio.gmd_id",
+        FilterOperator::Equals,
+        FilterValueType::Integer,
+    ),
+    FilterField::new(
+        "language_id",
+        "biblio.language_id",
+        FilterOperator::Equals,
+        FilterValueType::Text,
+    ),
+];
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -538,7 +573,7 @@ async fn enrich_biblios(
 #[utoipa::path(
     get,
     path = "/biblios",
-    responses((status = 200, body = PagedBiblios)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Biblios"
 )]
@@ -546,40 +581,56 @@ async fn list_biblios(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(params): Query<ListParams>,
-) -> Result<Json<PagedResponse<BiblioResponse>>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let pagination = params.pagination();
     let includes = params.includes();
+    let biblio_fields = params.fieldset("biblios");
     let (limit, offset, page, per_page) = pagination.limit_offset();
+    let sort_clause = params.sort_clause(BIBLIO_SORTS, "biblio.biblio_id DESC")?;
+    let filters = params.filter_clauses(BIBLIO_FILTERS)?;
+    let where_sql = where_clause(&filters);
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM biblio")
+    let count_sql = format!("SELECT COUNT(*) FROM biblio {}", where_sql);
+    let total = bind_filters_to_scalar(sqlx::query_scalar::<_, i64>(&count_sql), &filters)
         .fetch_one(&state.pool)
         .await?;
 
-    let rows = sqlx::query_as::<_, Biblio>(
-        "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio ORDER BY biblio_id DESC LIMIT ? OFFSET ?",
-    )
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+    let data_sql = format!(
+        "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio {} ORDER BY {} LIMIT ? OFFSET ?",
+        where_sql, sort_clause
+    );
+    let rows = bind_filters_to_query(sqlx::query_as::<_, Biblio>(&data_sql), &filters)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     let data = enrich_biblios(&state, &includes, rows).await?;
+    let documents = data
+        .into_iter()
+        .map(|biblio| {
+            resource_with_fields(
+                "biblios",
+                biblio.biblio.biblio_id.to_string(),
+                biblio,
+                biblio_fields,
+            )
+        })
+        .collect();
 
-    Ok(Json(PagedResponse {
-        data,
-        page,
-        per_page,
-        total,
-    }))
+    Ok(Json(collection_document(
+        documents,
+        pagination_meta(page, per_page, total),
+    )))
 }
 
 #[utoipa::path(
     get,
     path = "/biblios/search",
     params(("q" = String, Query, description = "Kata kunci pencarian", example = "rust")),
-    responses((status = 200, body = PagedBiblios)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Biblios"
 )]
@@ -587,7 +638,7 @@ async fn simple_search_biblios(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(params): Query<SimpleSearchParams>,
-) -> Result<Json<PagedResponse<BiblioResponse>>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let keyword = params.q.trim();
@@ -597,6 +648,7 @@ async fn simple_search_biblios(
 
     let pagination = params.list.pagination();
     let includes = params.list.includes();
+    let biblio_fields = params.list.fieldset("biblios");
     let (limit, offset, page, per_page) = pagination.limit_offset();
     let pattern = format!("%{}%", keyword);
 
@@ -647,13 +699,22 @@ async fn simple_search_biblios(
         .await?;
 
     let data = enrich_biblios(&state, &includes, rows).await?;
+    let documents = data
+        .into_iter()
+        .map(|biblio| {
+            resource_with_fields(
+                "biblios",
+                biblio.biblio.biblio_id.to_string(),
+                biblio,
+                biblio_fields,
+            )
+        })
+        .collect();
 
-    Ok(Json(PagedResponse {
-        data,
-        page,
-        per_page,
-        total,
-    }))
+    Ok(Json(collection_document(
+        documents,
+        pagination_meta(page, per_page, total),
+    )))
 }
 
 fn match_pattern(value: &str, matcher: MatchType) -> String {
@@ -669,7 +730,7 @@ fn match_pattern(value: &str, matcher: MatchType) -> String {
     post,
     path = "/biblios/search/advanced",
     request_body = AdvancedSearchPayload,
-    responses((status = 200, body = PagedBiblios)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Biblios"
 )]
@@ -677,7 +738,7 @@ async fn advanced_search_biblios(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(payload): Json<AdvancedSearchPayload>,
-) -> Result<Json<PagedResponse<BiblioResponse>>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let clauses: Vec<&AdvancedClause> = payload
@@ -692,6 +753,7 @@ async fn advanced_search_biblios(
 
     let pagination = payload.list.pagination();
     let includes = payload.list.includes();
+    let biblio_fields = payload.list.fieldset("biblios");
     let (limit, offset, page, per_page) = pagination.limit_offset();
 
     let mut joins = String::new();
@@ -778,20 +840,29 @@ async fn advanced_search_biblios(
         .await?;
 
     let data = enrich_biblios(&state, &includes, rows).await?;
+    let documents = data
+        .into_iter()
+        .map(|biblio| {
+            resource_with_fields(
+                "biblios",
+                biblio.biblio.biblio_id.to_string(),
+                biblio,
+                biblio_fields,
+            )
+        })
+        .collect();
 
-    Ok(Json(PagedResponse {
-        data,
-        page,
-        per_page,
-        total,
-    }))
+    Ok(Json(collection_document(
+        documents,
+        pagination_meta(page, per_page, total),
+    )))
 }
 
 #[utoipa::path(
     get,
     path = "/biblios/{biblio_id}",
     params(("biblio_id" = i64, Path, description = "Biblio ID")),
-    responses((status = 200, body = BiblioResponse)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Biblios"
 )]
@@ -800,7 +871,7 @@ async fn get_biblio(
     Query(params): Query<ListParams>,
     Path(biblio_id): Path<i64>,
     auth: AuthUser,
-) -> Result<Json<BiblioResponse>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let row = sqlx::query_as::<_, Biblio>(
@@ -811,6 +882,7 @@ async fn get_biblio(
     .await?;
 
     let includes = params.includes();
+    let biblio_fields = params.fieldset("biblios");
 
     let gmd = if includes.contains("gmd") {
         if let Some(gmd_id) = row.gmd_id {
@@ -1004,7 +1076,7 @@ async fn get_biblio(
         None
     };
 
-    Ok(Json(BiblioResponse {
+    let response = BiblioResponse {
         biblio: row,
         gmd,
         publisher,
@@ -1020,7 +1092,15 @@ async fn get_biblio(
         relations,
         attachments,
         custom,
-    }))
+    };
+
+    let id = response.biblio.biblio_id.to_string();
+    Ok(Json(single_document(resource_with_fields(
+        "biblios",
+        id,
+        response,
+        biblio_fields,
+    ))))
 }
 
 fn row_to_json(row: &MySqlRow) -> JsonValue {
@@ -1037,7 +1117,7 @@ fn row_to_json(row: &MySqlRow) -> JsonValue {
     post,
     path = "/biblios",
     request_body = UpsertBiblio,
-    responses((status = 200, body = Biblio)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Biblios"
 )]
@@ -1045,7 +1125,7 @@ async fn create_biblio(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(payload): Json<UpsertBiblio>,
-) -> Result<Json<Biblio>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Bibliography, Permission::Write)?;
 
     let now = chrono::Utc::now().naive_utc();
@@ -1072,7 +1152,11 @@ async fn create_biblio(
         .fetch_one(&state.pool)
         .await?;
 
-    Ok(Json(rec))
+    Ok(Json(single_document(resource(
+        "biblios",
+        rec.biblio_id.to_string(),
+        rec,
+    ))))
 }
 
 #[utoipa::path(
@@ -1080,7 +1164,7 @@ async fn create_biblio(
     path = "/biblios/{biblio_id}",
     params(("biblio_id" = i64, Path, description = "Biblio ID")),
     request_body = UpsertBiblio,
-    responses((status = 200, body = Biblio)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Biblios"
 )]
@@ -1089,7 +1173,7 @@ async fn update_biblio(
     Path(biblio_id): Path<i64>,
     auth: AuthUser,
     Json(payload): Json<UpsertBiblio>,
-) -> Result<Json<Biblio>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Bibliography, Permission::Write)?;
 
     let now = chrono::Utc::now().naive_utc();
@@ -1120,7 +1204,11 @@ async fn update_biblio(
         .fetch_one(&state.pool)
         .await?;
 
-    Ok(Json(rec))
+    Ok(Json(single_document(resource(
+        "biblios",
+        rec.biblio_id.to_string(),
+        rec,
+    ))))
 }
 
 #[utoipa::path(

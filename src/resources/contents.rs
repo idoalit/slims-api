@@ -12,7 +12,11 @@ use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
-    resources::{ListParams, PagedResponse},
+    jsonapi::{
+        JsonApiDocument, collection_document, pagination_meta, resource_with_fields,
+        single_document,
+    },
+    resources::ListParams,
 };
 
 #[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
@@ -37,7 +41,7 @@ pub fn router() -> Router<AppState> {
 #[utoipa::path(
     get,
     path = "/contents",
-    responses((status = 200, body = PagedResponse<Content>)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Contents"
 )]
@@ -45,10 +49,11 @@ async fn list_contents(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(params): Query<ListParams>,
-) -> Result<Json<PagedResponse<Content>>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::System, Permission::Read)?;
 
     let pagination = params.pagination();
+    let content_fields = params.fieldset("contents");
     let (limit, offset, page, per_page) = pagination.limit_offset();
 
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM content")
@@ -63,27 +68,38 @@ async fn list_contents(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(PagedResponse {
-        data: rows,
-        page,
-        per_page,
-        total,
-    }))
+    let data = rows
+        .into_iter()
+        .map(|content| {
+            resource_with_fields(
+                "contents",
+                content.content_id.to_string(),
+                content,
+                content_fields,
+            )
+        })
+        .collect();
+
+    Ok(Json(collection_document(
+        data,
+        pagination_meta(page, per_page, total),
+    )))
 }
 
 #[utoipa::path(
     get,
     path = "/contents/{content_id}",
     params(("content_id" = i64, Path, description = "Content ID")),
-    responses((status = 200, body = Content)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Contents"
 )]
 async fn get_content(
     State(state): State<AppState>,
+    Query(params): Query<ListParams>,
     auth: AuthUser,
     Path(content_id): Path<i64>,
-) -> Result<Json<Content>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::System, Permission::Read)?;
 
     let row = sqlx::query_as::<_, Content>(
@@ -93,22 +109,29 @@ async fn get_content(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(row))
+    let content_fields = params.fieldset("contents");
+    Ok(Json(single_document(resource_with_fields(
+        "contents",
+        row.content_id.to_string(),
+        row,
+        content_fields,
+    ))))
 }
 
 #[utoipa::path(
     get,
     path = "/contents/path/{content_path}",
     params(("content_path" = String, Path, description = "Content path slug")),
-    responses((status = 200, body = Content)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Contents"
 )]
 async fn get_content_by_path(
     State(state): State<AppState>,
+    Query(params): Query<ListParams>,
     auth: AuthUser,
     Path(content_path): Path<String>,
-) -> Result<Json<Content>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::System, Permission::Read)?;
 
     let row = sqlx::query_as::<_, Content>(
@@ -118,5 +141,11 @@ async fn get_content_by_path(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(row))
+    let content_fields = params.fieldset("contents");
+    Ok(Json(single_document(resource_with_fields(
+        "contents",
+        row.content_id.to_string(),
+        row,
+        content_fields,
+    ))))
 }

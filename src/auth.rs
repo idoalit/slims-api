@@ -14,7 +14,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, QueryBuilder};
 use utoipa::ToSchema;
 
-use crate::{config::AppState, error::AppError};
+use crate::{
+    config::AppState,
+    error::AppError,
+    jsonapi::{JsonApiDocument, resource, single_document},
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "lowercase")]
@@ -187,7 +191,7 @@ pub struct User {
     path = "/auth/login",
     request_body = LoginRequest,
     responses(
-        (status = 200, description = "Login success", body = AuthResponse),
+        (status = 200, description = "Login success", body = JsonApiDocument),
         (status = 401, description = "Invalid credentials"),
     ),
     tag = "Auth"
@@ -195,7 +199,7 @@ pub struct User {
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     let user = sqlx::query_as::<_, User>(
         "SELECT user_id, username, passwd, `groups`, user_type FROM `user` WHERE username = ?",
     )
@@ -238,12 +242,19 @@ pub async fn login(
         &EncodingKey::from_secret(state.jwt_secret.as_bytes()),
     )?;
 
-    Ok(Json(AuthResponse {
+    let response = AuthResponse {
         token,
         expires_at: exp,
         role,
         access,
-    }))
+    };
+
+    let token_id = response.token.clone();
+    Ok(Json(single_document(resource(
+        "tokens",
+        token_id,
+        response,
+    ))))
 }
 
 pub fn extract_secret(secret: String) -> Arc<str> {

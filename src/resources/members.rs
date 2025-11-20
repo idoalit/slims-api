@@ -16,7 +16,14 @@ use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
-    resources::{ListParams, PagedResponse},
+    jsonapi::{
+        JsonApiDocument, collection_document, pagination_meta, resource, resource_with_fields,
+        single_document,
+    },
+    resources::{
+        bind_filters_to_query, bind_filters_to_scalar, where_clause, FilterField, FilterOperator,
+        FilterValueType, ListParams, SortField,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
@@ -58,6 +65,34 @@ pub struct MemberResponse {
     pub custom: Option<JsonValue>,
 }
 
+const MEMBER_SORTS: &[SortField<'_>] = &[
+    SortField::new("member_id", "member.member_id"),
+    SortField::new("member_name", "member.member_name"),
+    SortField::new("expire_date", "member.expire_date"),
+    SortField::new("register_date", "member.register_date"),
+];
+
+const MEMBER_FILTERS: &[FilterField<'_>] = &[
+    FilterField::new(
+        "member_id",
+        "member.member_id",
+        FilterOperator::Equals,
+        FilterValueType::Text,
+    ),
+    FilterField::new(
+        "member_name",
+        "member.member_name",
+        FilterOperator::Like,
+        FilterValueType::Text,
+    ),
+    FilterField::new(
+        "member_email",
+        "member.member_email",
+        FilterOperator::Equals,
+        FilterValueType::Text,
+    ),
+];
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_members).post(create_member))
@@ -70,7 +105,7 @@ pub fn router() -> Router<AppState> {
 #[utoipa::path(
     get,
     path = "/members",
-    responses((status = 200, description = "Paginated members", body = PagedMembers)),
+    responses((status = 200, description = "Paginated members", body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Members"
 )]
@@ -78,24 +113,31 @@ async fn list_members(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(params): Query<ListParams>,
-) -> Result<Json<PagedResponse<MemberResponse>>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Membership, Permission::Read)?;
 
     let pagination = params.pagination();
     let includes = params.includes();
+    let member_fields = params.fieldset("members");
     let (limit, offset, page, per_page) = pagination.limit_offset();
+    let sort_clause = params.sort_clause(MEMBER_SORTS, "member.register_date DESC")?;
+    let filters = params.filter_clauses(MEMBER_FILTERS)?;
+    let where_sql = where_clause(&filters);
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM member")
+    let count_sql = format!("SELECT COUNT(*) FROM member {}", where_sql);
+    let total = bind_filters_to_scalar(sqlx::query_scalar::<_, i64>(&count_sql), &filters)
         .fetch_one(&state.pool)
         .await?;
 
-    let members = sqlx::query_as::<_, Member>(
-        "SELECT member_id, member_name, member_email, member_type_id, expire_date, is_pending FROM member ORDER BY register_date DESC LIMIT ? OFFSET ?",
-    )
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+    let data_sql = format!(
+        "SELECT member_id, member_name, member_email, member_type_id, expire_date, is_pending FROM member {} ORDER BY {} LIMIT ? OFFSET ?",
+        where_sql, sort_clause
+    );
+    let members = bind_filters_to_query(sqlx::query_as::<_, Member>(&data_sql), &filters)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     let mut member_type_cache: HashMap<i32, MemberTypeInfo> = HashMap::new();
     let mut data = Vec::with_capacity(members.len());
@@ -135,26 +177,31 @@ async fn list_members(
             None
         };
 
-        data.push(MemberResponse {
+        let response = MemberResponse {
             member,
             member_type,
             custom,
-        });
+        };
+
+        data.push(resource_with_fields(
+            "members",
+            response.member.member_id.clone(),
+            response,
+            member_fields,
+        ));
     }
 
-    Ok(Json(PagedResponse {
+    Ok(Json(collection_document(
         data,
-        page,
-        per_page,
-        total,
-    }))
+        pagination_meta(page, per_page, total),
+    )))
 }
 
 #[utoipa::path(
     get,
     path = "/members/{member_id}",
     params(("member_id" = String, Path, description = "Member ID")),
-    responses((status = 200, body = MemberResponse)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Members"
 )]
@@ -163,7 +210,7 @@ async fn get_member(
     Query(params): Query<ListParams>,
     Path(member_id): Path<String>,
     auth: AuthUser,
-) -> Result<Json<MemberResponse>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Membership, Permission::Read)?;
 
     let member = sqlx::query_as::<_, Member>(
@@ -200,11 +247,19 @@ async fn get_member(
         None
     };
 
-    Ok(Json(MemberResponse {
+    let response = MemberResponse {
         member,
         member_type,
         custom,
-    }))
+    };
+
+    let member_fields = params.fieldset("members");
+    Ok(Json(single_document(resource_with_fields(
+        "members",
+        response.member.member_id.clone(),
+        response,
+        member_fields,
+    ))))
 }
 
 fn row_to_json(row: &MySqlRow) -> JsonValue {
@@ -221,7 +276,7 @@ fn row_to_json(row: &MySqlRow) -> JsonValue {
     post,
     path = "/members",
     request_body = CreateMember,
-    responses((status = 200, body = Member)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Members"
 )]
@@ -229,7 +284,7 @@ async fn create_member(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(payload): Json<CreateMember>,
-) -> Result<Json<Member>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Membership, Permission::Write)?;
 
     let gender = payload.gender.unwrap_or(0);
@@ -253,7 +308,11 @@ async fn create_member(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(rec))
+    Ok(Json(single_document(resource(
+        "members",
+        rec.member_id.clone(),
+        rec,
+    ))))
 }
 
 #[utoipa::path(
@@ -261,7 +320,7 @@ async fn create_member(
     path = "/members/{member_id}",
     request_body = CreateMember,
     params(("member_id" = String, Path, description = "Member ID")),
-    responses((status = 200, body = Member)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Members"
 )]
@@ -270,7 +329,7 @@ async fn update_member(
     Path(member_id): Path<String>,
     auth: AuthUser,
     Json(payload): Json<CreateMember>,
-) -> Result<Json<Member>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Membership, Permission::Write)?;
 
     let gender = payload.gender.unwrap_or(0);
@@ -299,7 +358,11 @@ async fn update_member(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(rec))
+    Ok(Json(single_document(resource(
+        "members",
+        rec.member_id.clone(),
+        rec,
+    ))))
 }
 
 #[utoipa::path(

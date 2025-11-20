@@ -11,7 +11,11 @@ use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
-    resources::{ListParams, PagedResponse},
+    jsonapi::{
+        JsonApiDocument, collection_document, pagination_meta, resource_with_fields,
+        single_document,
+    },
+    resources::ListParams,
 };
 
 #[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
@@ -55,7 +59,7 @@ pub fn router() -> Router<AppState> {
 #[utoipa::path(
     get,
     path = "/files",
-    responses((status = 200, body = PagedResponse<FileResponse>)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Files"
 )]
@@ -63,11 +67,12 @@ async fn list_files(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(params): Query<ListParams>,
-) -> Result<Json<PagedResponse<FileResponse>>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let pagination = params.pagination();
     let includes = params.includes();
+    let file_fields = params.fieldset("files");
     let (limit, offset, page, per_page) = pagination.limit_offset();
 
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
@@ -100,19 +105,29 @@ async fn list_files(
         data.push(FileResponse { file, biblios });
     }
 
-    Ok(Json(PagedResponse {
-        data,
-        page,
-        per_page,
-        total,
-    }))
+    let documents = data
+        .into_iter()
+        .map(|file| {
+            resource_with_fields(
+                "files",
+                file.file.file_id.to_string(),
+                file,
+                file_fields,
+            )
+        })
+        .collect();
+
+    Ok(Json(collection_document(
+        documents,
+        pagination_meta(page, per_page, total),
+    )))
 }
 
 #[utoipa::path(
     get,
     path = "/files/{file_id}",
     params(("file_id" = i64, Path, description = "File ID")),
-    responses((status = 200, body = FileResponse)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Files"
 )]
@@ -121,7 +136,7 @@ async fn get_file(
     auth: AuthUser,
     Query(params): Query<ListParams>,
     Path(file_id): Path<i64>,
-) -> Result<Json<FileResponse>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Bibliography, Permission::Read)?;
 
     let file = sqlx::query_as::<_, FileObject>(
@@ -144,5 +159,12 @@ async fn get_file(
         None
     };
 
-    Ok(Json(FileResponse { file, biblios }))
+    let response = FileResponse { file, biblios };
+    let file_fields = params.fieldset("files");
+    Ok(Json(single_document(resource_with_fields(
+        "files",
+        response.file.file_id.to_string(),
+        response,
+        file_fields,
+    ))))
 }

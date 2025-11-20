@@ -13,7 +13,14 @@ use crate::{
     auth::{AuthUser, ModuleAccess, Permission},
     config::AppState,
     error::AppError,
-    resources::{ListParams, PagedResponse},
+    jsonapi::{
+        JsonApiDocument, collection_document, pagination_meta, resource, resource_with_fields,
+        single_document,
+    },
+    resources::{
+        bind_filters_to_query, bind_filters_to_scalar, where_clause, FilterField, FilterOperator,
+        FilterValueType, ListParams, SortField,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
@@ -57,6 +64,34 @@ pub struct LoanResponse {
     pub item: Option<LoanItem>,
 }
 
+const LOAN_SORTS: &[SortField<'_>] = &[
+    SortField::new("loan_date", "loan.loan_date"),
+    SortField::new("due_date", "loan.due_date"),
+    SortField::new("return_date", "loan.return_date"),
+    SortField::new("loan_id", "loan.loan_id"),
+];
+
+const LOAN_FILTERS: &[FilterField<'_>] = &[
+    FilterField::new(
+        "item_code",
+        "loan.item_code",
+        FilterOperator::Equals,
+        FilterValueType::Text,
+    ),
+    FilterField::new(
+        "member_id",
+        "loan.member_id",
+        FilterOperator::Equals,
+        FilterValueType::Text,
+    ),
+    FilterField::new(
+        "is_return",
+        "loan.is_return",
+        FilterOperator::Equals,
+        FilterValueType::Boolean,
+    ),
+];
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_loans).post(create_loan))
@@ -66,7 +101,7 @@ pub fn router() -> Router<AppState> {
 #[utoipa::path(
     get,
     path = "/loans",
-    responses((status = 200, body = PagedLoans)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Loans"
 )]
@@ -74,24 +109,31 @@ async fn list_loans(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(params): Query<ListParams>,
-) -> Result<Json<PagedResponse<LoanResponse>>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Circulation, Permission::Read)?;
 
     let pagination = params.pagination();
     let includes = params.includes();
+    let loan_fields = params.fieldset("loans");
     let (limit, offset, page, per_page) = pagination.limit_offset();
+    let sort_clause = params.sort_clause(LOAN_SORTS, "loan.loan_date DESC")?;
+    let filters = params.filter_clauses(LOAN_FILTERS)?;
+    let where_sql = where_clause(&filters);
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM loan")
+    let count_sql = format!("SELECT COUNT(*) FROM loan {}", where_sql);
+    let total = bind_filters_to_scalar(sqlx::query_scalar::<_, i64>(&count_sql), &filters)
         .fetch_one(&state.pool)
         .await?;
 
-    let loans = sqlx::query_as::<_, Loan>(
-        "SELECT loan_id, item_code, member_id, loan_date, due_date, actual, return_date, is_return FROM loan ORDER BY loan_date DESC LIMIT ? OFFSET ?",
-    )
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+    let data_sql = format!(
+        "SELECT loan_id, item_code, member_id, loan_date, due_date, actual, return_date, is_return FROM loan {} ORDER BY {} LIMIT ? OFFSET ?",
+        where_sql, sort_clause
+    );
+    let loans = bind_filters_to_query(sqlx::query_as::<_, Loan>(&data_sql), &filters)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     let mut member_cache: HashMap<String, LoanMember> = HashMap::new();
     let mut item_cache: HashMap<String, LoanItem> = HashMap::new();
@@ -134,22 +176,26 @@ async fn list_loans(
             }
         }
 
-        data.push(LoanResponse { loan, member, item });
+        let response = LoanResponse { loan, member, item };
+        data.push(resource_with_fields(
+            "loans",
+            response.loan.loan_id.to_string(),
+            response,
+            loan_fields,
+        ));
     }
 
-    Ok(Json(PagedResponse {
+    Ok(Json(collection_document(
         data,
-        page,
-        per_page,
-        total,
-    }))
+        pagination_meta(page, per_page, total),
+    )))
 }
 
 #[utoipa::path(
     post,
     path = "/loans",
     request_body = CreateLoan,
-    responses((status = 200, body = Loan)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Loans"
 )]
@@ -157,7 +203,7 @@ async fn create_loan(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(payload): Json<CreateLoan>,
-) -> Result<Json<Loan>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Circulation, Permission::Write)?;
 
     let today = chrono::Utc::now().date_naive();
@@ -179,14 +225,18 @@ async fn create_loan(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(rec))
+    Ok(Json(single_document(resource(
+        "loans",
+        rec.loan_id.to_string(),
+        rec,
+    ))))
 }
 
 #[utoipa::path(
     post,
     path = "/loans/{loan_id}/return",
     params(("loan_id" = i64, Path, description = "Loan ID")),
-    responses((status = 200, body = Loan)),
+    responses((status = 200, body = JsonApiDocument)),
     security(("bearerAuth" = [])),
     tag = "Loans"
 )]
@@ -194,7 +244,7 @@ async fn return_loan(
     State(state): State<AppState>,
     Path(loan_id): Path<i64>,
     auth: AuthUser,
-) -> Result<Json<Loan>, AppError> {
+) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Circulation, Permission::Write)?;
 
     let today = chrono::Utc::now().date_naive();
@@ -218,5 +268,9 @@ async fn return_loan(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(rec))
+    Ok(Json(single_document(resource(
+        "loans",
+        rec.loan_id.to_string(),
+        rec,
+    ))))
 }
