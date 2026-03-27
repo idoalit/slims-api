@@ -110,15 +110,22 @@ Add to your Claude Desktop `claude_desktop_config.json` (usually at `~/Library/A
 
 | Tool | Description |
 |------|-------------|
-| `search_catalog` | Cari buku berdasarkan judul / pengarang / subjek / ISBN |
-| `get_book` | Detail lengkap buku beserta eksemplar & ketersediaan |
-| `list_items` | Daftar eksemplar fisik dengan filter lokasi & ketersediaan |
-| `search_members` | Cari anggota berdasarkan nama / ID anggota / email |
-| `get_member` | Detail anggota termasuk jumlah peminjaman aktif |
-| `list_loans` | Daftar peminjaman dengan filter anggota / kode item |
-| `checkout_book` | Proses peminjaman buku (validasi ketersediaan & status anggota) |
-| `return_book` | Proses pengembalian buku |
-| `get_lookups` | Ambil data referensi (lokasi, GMD, bahasa, jenis koleksi, dll.) |
+| `library_catalog_search` | Cari buku berdasarkan judul / pengarang / subjek / ISBN |
+| `library_catalog_get_biblio_detail` | Detail lengkap buku beserta eksemplar & ketersediaan |
+| `library_items_list` | Daftar eksemplar fisik dengan filter lokasi & ketersediaan |
+| `library_members_search` | Cari anggota berdasarkan nama / ID anggota / email |
+| `library_members_get_detail` | Detail anggota termasuk tipe keanggotaan & jumlah peminjaman aktif |
+| `library_loans_list` | Daftar peminjaman dengan filter anggota / kode item / status aktif |
+| `library_loans_checkout_create` | Proses peminjaman buku (validasi ketersediaan & status anggota) |
+| `library_loans_return_register` | Proses pengembalian buku |
+| `library_lookups_list` | Ambil data referensi (lokasi, GMD, bahasa, jenis koleksi, dll.) |
+| `library_reports_circulation` | Laporan sirkulasi (dipinjam, dikembalikan, aktif, terlambat) + buku terpinjam terbanyak |
+| `library_reports_overdue_loans` | Laporan keterlambatan pengembalian + estimasi denda |
+| `library_reports_collection_overview` | Statistik koleksi total dan breakdown per GMD/lokasi/tipe koleksi |
+| `library_reports_member_overview` | Statistik anggota per tipe + anggota dengan peminjaman terbanyak |
+| `library_reports_visitor_overview` | Laporan kunjungan perpustakaan per hari/per bulan |
+| `library_reports_fines_overview` | Laporan denda per anggota (debet/kredit/tunggakan) |
+| `library_reports_collection_growth` | Laporan pertambahan koleksi pada rentang tanggal tertentu |
 
 Development notes
 - Logging via `RUST_LOG`.
