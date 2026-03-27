@@ -7,7 +7,7 @@ use super::{LibraryMcpServer, types::*};
 impl LibraryMcpServer {
     /// Ambil data referensi perpustakaan seperti tipe anggota, lokasi,
     /// jenis koleksi, bahasa, GMD, status item, penerbit, atau topik.
-    #[tool(description = "Ambil data referensi perpustakaan. Lookup types: member_types, locations, coll_types, languages, gmds, item_statuses, publishers, topics")]
+    #[tool(description = "Get library reference data. Lookup types: member_types, locations, coll_types, languages, gmds, item_statuses, publishers, topics")]
     async fn library_lookups_list(
         &self,
         Parameters(input): Parameters<GetLookupsInput>,

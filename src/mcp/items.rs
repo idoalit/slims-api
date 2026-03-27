@@ -7,7 +7,7 @@ use super::{LibraryMcpServer, types::*};
 impl LibraryMcpServer {
     /// Daftar eksemplar fisik di perpustakaan dengan filter opsional
     /// berdasarkan bibliografi, lokasi, atau ketersediaan.
-    #[tool(description = "Daftar eksemplar fisik buku dengan filter opsional berdasarkan bibliografi, lokasi, atau ketersediaan")]
+    #[tool(description = "List physical item copies with optional filters by bibliography, location, or availability")]
     async fn library_items_list(
         &self,
         Parameters(input): Parameters<ListItemsInput>,

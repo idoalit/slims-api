@@ -7,7 +7,7 @@ use super::{LibraryMcpServer, types::*};
 impl LibraryMcpServer {
     /// Daftar peminjaman dengan filter opsional berdasarkan anggota,
     /// kode item, atau status pengembalian.
-    #[tool(description = "Daftar peminjaman buku dengan filter opsional berdasarkan anggota, kode item, atau status aktif")]
+    #[tool(description = "List loans with optional filters by member ID, item code, or active status")]
     async fn library_loans_list(
         &self,
         Parameters(input): Parameters<ListLoansInput>,
@@ -51,7 +51,7 @@ impl LibraryMcpServer {
 
     /// Buat peminjaman baru (checkout buku). Pastikan item tersedia dan
     /// anggota masih aktif sebelum memanggil tool ini.
-    #[tool(description = "Buat peminjaman buku baru. Masukkan kode item dan ID anggota. Tanggal jatuh tempo otomatis dihitung dari tipe keanggotaan.")]
+    #[tool(description = "Create a new checkout transaction using item code and member ID. Due date is calculated from membership type when omitted.")]
     async fn library_loans_checkout_create(
         &self,
         Parameters(input): Parameters<CheckoutInput>,
@@ -168,7 +168,7 @@ impl LibraryMcpServer {
     }
 
     /// Kembalikan buku yang dipinjam berdasarkan loan_id.
-    #[tool(description = "Kembalikan buku yang dipinjam. Masukkan loan_id untuk mencatat pengembalian.")]
+    #[tool(description = "Register a returned loan by loan_id")]
     async fn library_loans_return_register(
         &self,
         Parameters(input): Parameters<ReturnBookInput>,

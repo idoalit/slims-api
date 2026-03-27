@@ -7,7 +7,7 @@ use super::{LibraryMcpServer, types::*};
 impl LibraryMcpServer {
     /// Laporan sirkulasi peminjaman: ringkasan total, dikembalikan, aktif, terlambat,
     /// dan daftar N buku terpinjam terbanyak dalam rentang waktu tertentu.
-    #[tool(description = "Laporan sirkulasi perpustakaan: ringkasan total peminjaman, dikembalikan, aktif, terlambat, serta daftar N buku terpinjam terbanyak dalam rentang tanggal tertentu")]
+    #[tool(description = "Library circulation report: summary of total loans, returned, active, overdue, plus top N most borrowed titles within a date range")]
     async fn library_reports_circulation(
         &self,
         Parameters(input): Parameters<CirculationReportInput>,
@@ -73,7 +73,7 @@ impl LibraryMcpServer {
 
     /// Laporan keterlambatan pengembalian buku: daftar peminjaman yang melewati
     /// tanggal jatuh tempo beserta estimasi denda.
-    #[tool(description = "Laporan buku terlambat dikembalikan: daftar peminjaman melewati jatuh tempo beserta estimasi denda. Filter opsional berdasarkan ID anggota atau ID lokasi item.")]
+    #[tool(description = "Overdue loans report: list of active overdue loans with estimated fines. Optional filters by member ID or item location ID.")]
     async fn library_reports_overdue_loans(
         &self,
         Parameters(input): Parameters<OverdueReportInput>,
@@ -124,7 +124,7 @@ impl LibraryMcpServer {
 
     /// Statistik koleksi perpustakaan: total bibliografi dan eksemplar,
     /// dikelompokkan berdasarkan GMD, lokasi, dan tipe koleksi.
-    #[tool(description = "Laporan statistik koleksi perpustakaan: total jumlah bibliografi dan eksemplar, dikelompokkan berdasarkan jenis bahan (GMD), lokasi, dan tipe koleksi")]
+    #[tool(description = "Collection overview report: total bibliographic records and item copies, grouped by material type (GMD), location, and collection type")]
     async fn library_reports_collection_overview(
         &self,
         Parameters(_input): Parameters<CollectionReportInput>,
@@ -199,7 +199,7 @@ impl LibraryMcpServer {
 
     /// Statistik anggota perpustakaan: breakdown per tipe keanggotaan
     /// (aktif/pending/kedaluwarsa) dan 10 peminjam terbanyak.
-    #[tool(description = "Laporan statistik anggota perpustakaan: jumlah anggota per tipe (aktif/pending/kedaluwarsa) dan daftar 10 peminjam terbanyak. Filter opsional berdasarkan tipe keanggotaan.")]
+    #[tool(description = "Member overview report: member counts by type (active/pending/expired) and top 10 borrowers. Optional filter by membership type.")]
     async fn library_reports_member_overview(
         &self,
         Parameters(input): Parameters<MemberReportInput>,
@@ -260,7 +260,7 @@ impl LibraryMcpServer {
 
     /// Laporan kunjungan perpustakaan dari tabel visitor_count.
     /// Detail dapat dikelompokkan per hari atau per bulan.
-    #[tool(description = "Laporan kunjungan perpustakaan: total kunjungan, anggota unik, dan detail per hari atau per bulan. Filter berdasarkan rentang tanggal; group_by: \"day\" (default) atau \"month\".")]
+    #[tool(description = "Visitor report: total visits, unique members, and breakdown by day or month. Filter by date range; group_by: \"day\" (default) or \"month\".")]
     async fn library_reports_visitor_overview(
         &self,
         Parameters(input): Parameters<VisitorReportInput>,
@@ -319,7 +319,7 @@ impl LibraryMcpServer {
 
     /// Laporan denda anggota: total debet, kredit, dan sisa denda yang
     /// belum dibayar per anggota. Default hanya menampilkan yang memiliki tunggakan.
-    #[tool(description = "Laporan denda anggota perpustakaan: total debet, kredit, dan sisa tunggakan per anggota. Filter opsional berdasarkan ID anggota; outstanding_only (default: true) untuk menyaring yang belum lunas.")]
+    #[tool(description = "Fines report: total debit, credit, and outstanding balance per member. Optional filter by member ID; outstanding_only (default: true) shows unpaid balances only.")]
     async fn library_reports_fines_overview(
         &self,
         Parameters(input): Parameters<FinesReportInput>,
@@ -365,7 +365,7 @@ impl LibraryMcpServer {
     /// Laporan pertambahan koleksi: jumlah bibliografi dan eksemplar baru
     /// yang diinput dalam rentang tanggal tertentu, dengan breakdown per GMD
     /// dan lokasi, serta daftar judul-judul baru.
-    #[tool(description = "Laporan pertambahan koleksi perpustakaan dalam rentang tanggal: total bibliografi dan eksemplar baru, breakdown per jenis bahan (GMD) dan lokasi, serta daftar judul baru. Filter berdasarkan start_date dan end_date (format YYYY-MM-DD).")]
+    #[tool(description = "Collection growth report for a selected date range: total new bibliographic records and item copies, grouped by material type (GMD) and location, plus a list of newly added titles. Filter using start_date and end_date (YYYY-MM-DD).")]
     async fn library_reports_collection_growth(
         &self,
         Parameters(input): Parameters<NewCollectionReportInput>,

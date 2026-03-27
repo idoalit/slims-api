@@ -110,22 +110,22 @@ Add to your Claude Desktop `claude_desktop_config.json` (usually at `~/Library/A
 
 | Tool | Description |
 |------|-------------|
-| `library_catalog_search` | Cari buku berdasarkan judul / pengarang / subjek / ISBN |
-| `library_catalog_get_biblio_detail` | Detail lengkap buku beserta eksemplar & ketersediaan |
-| `library_items_list` | Daftar eksemplar fisik dengan filter lokasi & ketersediaan |
-| `library_members_search` | Cari anggota berdasarkan nama / ID anggota / email |
-| `library_members_get_detail` | Detail anggota termasuk tipe keanggotaan & jumlah peminjaman aktif |
-| `library_loans_list` | Daftar peminjaman dengan filter anggota / kode item / status aktif |
-| `library_loans_checkout_create` | Proses peminjaman buku (validasi ketersediaan & status anggota) |
-| `library_loans_return_register` | Proses pengembalian buku |
-| `library_lookups_list` | Ambil data referensi (lokasi, GMD, bahasa, jenis koleksi, dll.) |
-| `library_reports_circulation` | Laporan sirkulasi (dipinjam, dikembalikan, aktif, terlambat) + buku terpinjam terbanyak |
-| `library_reports_overdue_loans` | Laporan keterlambatan pengembalian + estimasi denda |
-| `library_reports_collection_overview` | Statistik koleksi total dan breakdown per GMD/lokasi/tipe koleksi |
-| `library_reports_member_overview` | Statistik anggota per tipe + anggota dengan peminjaman terbanyak |
-| `library_reports_visitor_overview` | Laporan kunjungan perpustakaan per hari/per bulan |
-| `library_reports_fines_overview` | Laporan denda per anggota (debet/kredit/tunggakan) |
-| `library_reports_collection_growth` | Laporan pertambahan koleksi pada rentang tanggal tertentu |
+| `library_catalog_search` | Search books by title, author, subject, or ISBN |
+| `library_catalog_get_biblio_detail` | Get full bibliographic details, item copies, and availability |
+| `library_items_list` | List physical item copies with optional location and availability filters |
+| `library_members_search` | Search members by name, member ID, or email |
+| `library_members_get_detail` | Get member details including membership type and active loan count |
+| `library_loans_list` | List loans with optional filters by member, item code, or active status |
+| `library_loans_checkout_create` | Create a checkout transaction (validates availability and member status) |
+| `library_loans_return_register` | Register an item return |
+| `library_lookups_list` | Retrieve lookup/reference data (locations, GMDs, languages, collection types, etc.) |
+| `library_reports_circulation` | Circulation report (loaned, returned, active, overdue) plus most borrowed titles |
+| `library_reports_overdue_loans` | Overdue loans report with estimated fines |
+| `library_reports_collection_overview` | Collection overview with totals and breakdown by GMD/location/collection type |
+| `library_reports_member_overview` | Member statistics by type plus top borrowers |
+| `library_reports_visitor_overview` | Visitor report by day or month |
+| `library_reports_fines_overview` | Member fines report (debit/credit/outstanding) |
+| `library_reports_collection_growth` | Collection growth report within a selected date range |
 
 Development notes
 - Logging via `RUST_LOG`.

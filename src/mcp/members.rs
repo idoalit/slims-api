@@ -6,7 +6,7 @@ use super::{LibraryMcpServer, types::*};
 #[tool_router(router = members_tool_router, vis = "pub(crate)")]
 impl LibraryMcpServer {
     /// Cari anggota perpustakaan berdasarkan nama, ID, atau email.
-    #[tool(description = "Cari anggota perpustakaan berdasarkan nama, ID anggota, atau email")]
+    #[tool(description = "Search library members by name, member ID, or email")]
     async fn library_members_search(
         &self,
         Parameters(input): Parameters<SearchMembersInput>,
@@ -52,7 +52,7 @@ impl LibraryMcpServer {
     }
 
     /// Ambil detail anggota termasuk tipe keanggotaan dan batas pinjam.
-    #[tool(description = "Ambil detail anggota perpustakaan termasuk tipe keanggotaan, batas pinjam, dan jumlah pinjaman aktif")]
+    #[tool(description = "Get member details including membership type, loan limits, and active loan count")]
     async fn library_members_get_detail(
         &self,
         Parameters(input): Parameters<GetMemberInput>,
