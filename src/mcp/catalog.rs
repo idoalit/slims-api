@@ -8,7 +8,7 @@ impl LibraryMcpServer {
     /// Cari buku/bibliografi di katalog perpustakaan berdasarkan
     /// judul, penulis, topik, atau ISBN/ISSN.
     #[tool(description = "Cari buku di katalog perpustakaan berdasarkan judul, penulis, topik, atau ISBN")]
-    async fn search_catalog(
+    async fn library_catalog_search(
         &self,
         Parameters(input): Parameters<SearchCatalogInput>,
     ) -> Result<String, McpError> {
@@ -91,7 +91,7 @@ impl LibraryMcpServer {
     /// Ambil detail lengkap sebuah buku berdasarkan biblio_id, termasuk
     /// penulis, topik, dan daftar eksemplar yang tersedia.
     #[tool(description = "Ambil detail lengkap buku berdasarkan biblio_id, termasuk penulis, topik, dan daftar eksemplar")]
-    async fn get_book(
+    async fn library_catalog_get_biblio_detail(
         &self,
         Parameters(input): Parameters<GetBookInput>,
     ) -> Result<String, McpError> {

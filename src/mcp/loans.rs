@@ -8,7 +8,7 @@ impl LibraryMcpServer {
     /// Daftar peminjaman dengan filter opsional berdasarkan anggota,
     /// kode item, atau status pengembalian.
     #[tool(description = "Daftar peminjaman buku dengan filter opsional berdasarkan anggota, kode item, atau status aktif")]
-    async fn list_loans(
+    async fn library_loans_list(
         &self,
         Parameters(input): Parameters<ListLoansInput>,
     ) -> Result<String, McpError> {
@@ -52,7 +52,7 @@ impl LibraryMcpServer {
     /// Buat peminjaman baru (checkout buku). Pastikan item tersedia dan
     /// anggota masih aktif sebelum memanggil tool ini.
     #[tool(description = "Buat peminjaman buku baru. Masukkan kode item dan ID anggota. Tanggal jatuh tempo otomatis dihitung dari tipe keanggotaan.")]
-    async fn checkout_book(
+    async fn library_loans_checkout_create(
         &self,
         Parameters(input): Parameters<CheckoutInput>,
     ) -> Result<String, McpError> {
@@ -169,7 +169,7 @@ impl LibraryMcpServer {
 
     /// Kembalikan buku yang dipinjam berdasarkan loan_id.
     #[tool(description = "Kembalikan buku yang dipinjam. Masukkan loan_id untuk mencatat pengembalian.")]
-    async fn return_book(
+    async fn library_loans_return_register(
         &self,
         Parameters(input): Parameters<ReturnBookInput>,
     ) -> Result<String, McpError> {

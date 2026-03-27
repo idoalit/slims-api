@@ -8,7 +8,7 @@ impl LibraryMcpServer {
     /// Laporan sirkulasi peminjaman: ringkasan total, dikembalikan, aktif, terlambat,
     /// dan daftar N buku terpinjam terbanyak dalam rentang waktu tertentu.
     #[tool(description = "Laporan sirkulasi perpustakaan: ringkasan total peminjaman, dikembalikan, aktif, terlambat, serta daftar N buku terpinjam terbanyak dalam rentang tanggal tertentu")]
-    async fn get_circulation_report(
+    async fn library_reports_circulation(
         &self,
         Parameters(input): Parameters<CirculationReportInput>,
     ) -> Result<String, McpError> {
@@ -74,7 +74,7 @@ impl LibraryMcpServer {
     /// Laporan keterlambatan pengembalian buku: daftar peminjaman yang melewati
     /// tanggal jatuh tempo beserta estimasi denda.
     #[tool(description = "Laporan buku terlambat dikembalikan: daftar peminjaman melewati jatuh tempo beserta estimasi denda. Filter opsional berdasarkan ID anggota atau ID lokasi item.")]
-    async fn get_overdue_report(
+    async fn library_reports_overdue_loans(
         &self,
         Parameters(input): Parameters<OverdueReportInput>,
     ) -> Result<String, McpError> {
@@ -125,7 +125,7 @@ impl LibraryMcpServer {
     /// Statistik koleksi perpustakaan: total bibliografi dan eksemplar,
     /// dikelompokkan berdasarkan GMD, lokasi, dan tipe koleksi.
     #[tool(description = "Laporan statistik koleksi perpustakaan: total jumlah bibliografi dan eksemplar, dikelompokkan berdasarkan jenis bahan (GMD), lokasi, dan tipe koleksi")]
-    async fn get_collection_report(
+    async fn library_reports_collection_overview(
         &self,
         Parameters(_input): Parameters<CollectionReportInput>,
     ) -> Result<String, McpError> {
@@ -200,7 +200,7 @@ impl LibraryMcpServer {
     /// Statistik anggota perpustakaan: breakdown per tipe keanggotaan
     /// (aktif/pending/kedaluwarsa) dan 10 peminjam terbanyak.
     #[tool(description = "Laporan statistik anggota perpustakaan: jumlah anggota per tipe (aktif/pending/kedaluwarsa) dan daftar 10 peminjam terbanyak. Filter opsional berdasarkan tipe keanggotaan.")]
-    async fn get_member_report(
+    async fn library_reports_member_overview(
         &self,
         Parameters(input): Parameters<MemberReportInput>,
     ) -> Result<String, McpError> {
@@ -261,7 +261,7 @@ impl LibraryMcpServer {
     /// Laporan kunjungan perpustakaan dari tabel visitor_count.
     /// Detail dapat dikelompokkan per hari atau per bulan.
     #[tool(description = "Laporan kunjungan perpustakaan: total kunjungan, anggota unik, dan detail per hari atau per bulan. Filter berdasarkan rentang tanggal; group_by: \"day\" (default) atau \"month\".")]
-    async fn get_visitor_report(
+    async fn library_reports_visitor_overview(
         &self,
         Parameters(input): Parameters<VisitorReportInput>,
     ) -> Result<String, McpError> {
@@ -320,7 +320,7 @@ impl LibraryMcpServer {
     /// Laporan denda anggota: total debet, kredit, dan sisa denda yang
     /// belum dibayar per anggota. Default hanya menampilkan yang memiliki tunggakan.
     #[tool(description = "Laporan denda anggota perpustakaan: total debet, kredit, dan sisa tunggakan per anggota. Filter opsional berdasarkan ID anggota; outstanding_only (default: true) untuk menyaring yang belum lunas.")]
-    async fn get_fines_report(
+    async fn library_reports_fines_overview(
         &self,
         Parameters(input): Parameters<FinesReportInput>,
     ) -> Result<String, McpError> {
@@ -360,5 +360,119 @@ impl LibraryMcpServer {
 
         serde_json::to_string_pretty(&rows)
             .map_err(|e| McpError::internal_error(e.to_string(), None))
+    }
+
+    /// Laporan pertambahan koleksi: jumlah bibliografi dan eksemplar baru
+    /// yang diinput dalam rentang tanggal tertentu, dengan breakdown per GMD
+    /// dan lokasi, serta daftar judul-judul baru.
+    #[tool(description = "Laporan pertambahan koleksi perpustakaan dalam rentang tanggal: total bibliografi dan eksemplar baru, breakdown per jenis bahan (GMD) dan lokasi, serta daftar judul baru. Filter berdasarkan start_date dan end_date (format YYYY-MM-DD).")]
+    async fn library_reports_collection_growth(
+        &self,
+        Parameters(input): Parameters<NewCollectionReportInput>,
+    ) -> Result<String, McpError> {
+        let today = chrono::Utc::now().date_naive();
+        let default_start = (today - chrono::Duration::days(30)).to_string();
+        let default_end = today.to_string();
+        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
+        let limit = input.limit.unwrap_or(20).min(100) as i64;
+
+        // Ringkasan: jumlah rekor bibliografi baru dan eksemplar baru dalam periode
+        let new_biblio_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM biblio WHERE DATE(input_date) BETWEEN ? AND ?")
+                .bind(&start)
+                .bind(&end)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        let new_items_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM item WHERE DATE(input_date) BETWEEN ? AND ?")
+                .bind(&start)
+                .bind(&end)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        // Breakdown per GMD: dari biblio baru yang diinput
+        let by_gmd = sqlx::query_as::<_, NewCollectionByGmdRow>(
+            "SELECT COALESCE(g.gmd_name, 'Tidak Diketahui') as gmd_name, \
+                COUNT(DISTINCT b.biblio_id) as new_biblio, \
+                COUNT(i.item_id) as new_items \
+             FROM biblio b \
+             LEFT JOIN mst_gmd g ON b.gmd_id = g.gmd_id \
+             LEFT JOIN item i ON i.biblio_id = b.biblio_id \
+             WHERE DATE(b.input_date) BETWEEN ? AND ? \
+             GROUP BY b.gmd_id, g.gmd_name \
+             ORDER BY new_biblio DESC",
+        )
+        .bind(&start)
+        .bind(&end)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        // Breakdown per lokasi: dari eksemplar baru yang diinput
+        let by_location = sqlx::query_as::<_, NewCollectionByLocationRow>(
+            "SELECT COALESCE(l.location_name, 'Tidak Diketahui') as location_name, \
+                COUNT(i.item_id) as new_items \
+             FROM item i \
+             LEFT JOIN mst_location l ON i.location_id = l.location_id \
+             WHERE DATE(i.input_date) BETWEEN ? AND ? \
+             GROUP BY i.location_id, l.location_name \
+             ORDER BY new_items DESC",
+        )
+        .bind(&start)
+        .bind(&end)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        // Daftar judul baru
+        let new_titles = sqlx::query_as::<_, NewBiblioRow>(
+            "SELECT b.biblio_id, b.title, g.gmd_name, b.classification, b.call_number, \
+                COUNT(i.item_id) as item_count, \
+                DATE_FORMAT(b.input_date, '%Y-%m-%d') as input_date \
+             FROM biblio b \
+             LEFT JOIN mst_gmd g ON b.gmd_id = g.gmd_id \
+             LEFT JOIN item i ON i.biblio_id = b.biblio_id \
+             WHERE DATE(b.input_date) BETWEEN ? AND ? \
+             GROUP BY b.biblio_id, b.title, g.gmd_name, b.classification, b.call_number, b.input_date \
+             ORDER BY b.input_date DESC \
+             LIMIT ?",
+        )
+        .bind(&start)
+        .bind(&end)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        #[derive(Serialize)]
+        struct NewCollectionSummary {
+            new_biblio: i64,
+            new_items: i64,
+        }
+
+        #[derive(Serialize)]
+        struct NewCollectionReport {
+            period: String,
+            summary: NewCollectionSummary,
+            by_gmd: Vec<NewCollectionByGmdRow>,
+            by_location: Vec<NewCollectionByLocationRow>,
+            new_titles: Vec<NewBiblioRow>,
+        }
+
+        serde_json::to_string_pretty(&NewCollectionReport {
+            period: format!("{} s/d {}", start, end),
+            summary: NewCollectionSummary {
+                new_biblio: new_biblio_count,
+                new_items: new_items_count,
+            },
+            by_gmd,
+            by_location,
+            new_titles,
+        })
+        .map_err(|e| McpError::internal_error(e.to_string(), None))
     }
 }

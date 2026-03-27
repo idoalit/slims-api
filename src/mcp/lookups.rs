@@ -8,7 +8,7 @@ impl LibraryMcpServer {
     /// Ambil data referensi perpustakaan seperti tipe anggota, lokasi,
     /// jenis koleksi, bahasa, GMD, status item, penerbit, atau topik.
     #[tool(description = "Ambil data referensi perpustakaan. Lookup types: member_types, locations, coll_types, languages, gmds, item_statuses, publishers, topics")]
-    async fn get_lookups(
+    async fn library_lookups_list(
         &self,
         Parameters(input): Parameters<GetLookupsInput>,
     ) -> Result<String, McpError> {

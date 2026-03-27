@@ -8,7 +8,7 @@ impl LibraryMcpServer {
     /// Daftar eksemplar fisik di perpustakaan dengan filter opsional
     /// berdasarkan bibliografi, lokasi, atau ketersediaan.
     #[tool(description = "Daftar eksemplar fisik buku dengan filter opsional berdasarkan bibliografi, lokasi, atau ketersediaan")]
-    async fn list_items(
+    async fn library_items_list(
         &self,
         Parameters(input): Parameters<ListItemsInput>,
     ) -> Result<String, McpError> {

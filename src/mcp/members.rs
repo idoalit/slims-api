@@ -7,7 +7,7 @@ use super::{LibraryMcpServer, types::*};
 impl LibraryMcpServer {
     /// Cari anggota perpustakaan berdasarkan nama, ID, atau email.
     #[tool(description = "Cari anggota perpustakaan berdasarkan nama, ID anggota, atau email")]
-    async fn search_members(
+    async fn library_members_search(
         &self,
         Parameters(input): Parameters<SearchMembersInput>,
     ) -> Result<String, McpError> {
@@ -53,7 +53,7 @@ impl LibraryMcpServer {
 
     /// Ambil detail anggota termasuk tipe keanggotaan dan batas pinjam.
     #[tool(description = "Ambil detail anggota perpustakaan termasuk tipe keanggotaan, batas pinjam, dan jumlah pinjaman aktif")]
-    async fn get_member(
+    async fn library_members_get_detail(
         &self,
         Parameters(input): Parameters<GetMemberInput>,
     ) -> Result<String, McpError> {

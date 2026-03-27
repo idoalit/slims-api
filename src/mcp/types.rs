@@ -172,6 +172,16 @@ pub struct CollectionReportInput {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NewCollectionReportInput {
+    /// Tanggal mulai periode (format: YYYY-MM-DD). Default: 30 hari lalu.
+    pub start_date: Option<String>,
+    /// Tanggal akhir periode (format: YYYY-MM-DD). Default: hari ini.
+    pub end_date: Option<String>,
+    /// Jumlah judul baru yang ditampilkan dalam daftar (default: 20, max: 100)
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MemberReportInput {
     /// Filter berdasarkan ID tipe anggota (opsional)
     pub member_type_id: Option<i32>,
@@ -279,4 +289,28 @@ pub(super) struct FinesRow {
     pub total_debet: i64,
     pub total_credit: i64,
     pub outstanding: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct NewCollectionByGmdRow {
+    pub gmd_name: String,
+    pub new_biblio: i64,
+    pub new_items: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct NewCollectionByLocationRow {
+    pub location_name: String,
+    pub new_items: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct NewBiblioRow {
+    pub biblio_id: i64,
+    pub title: String,
+    pub gmd_name: Option<String>,
+    pub classification: Option<String>,
+    pub call_number: Option<String>,
+    pub item_count: i64,
+    pub input_date: Option<String>,
 }
