@@ -49,9 +49,7 @@ impl ServerHandler for LibraryMcpServer {
             env!("CARGO_PKG_VERSION"),
         ))
         .with_instructions(
-            "MCP server untuk Sistem Perpustakaan SLiMS. \
-             Tersedia tools untuk: mencari & membaca katalog buku, melihat eksemplar, \
-             mengelola anggota, membuat & mengembalikan peminjaman, serta membaca data referensi.",
+            "MCP server for the SLiMS library system. Available tools support catalog search and bibliographic detail lookup, item copy listing, member search and detail lookup, loan listing, checkout creation, return registration, library lookup/reference data retrieval, and reporting for circulation, overdue loans, collection overview, member overview, visitor activity, fines, and collection growth.",
         )
     }
 }
