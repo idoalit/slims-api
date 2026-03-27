@@ -62,6 +62,64 @@ Database
 - Schema dump: `slims.sql`.
 - Uses MySQL via SQLx (runtime tokio + rustls).
 
+MCP (Model Context Protocol) Support
+--------------------------------------
+
+The API supports [MCP](https://modelcontextprotocol.io) so AI agents (Claude, Cursor, etc.) can interact with the library system directly.
+
+### Transports
+
+**Streamable HTTP** — built into the main server, protected by JWT.
+
+```
+POST/GET/DELETE http://localhost:3000/mcp
+Authorization: Bearer <jwt-token>
+```
+
+Obtain a token first via `POST /auth/login`, then pass it as a `Bearer` token.
+
+**stdio** — separate binary for local AI agent integrations (Claude Desktop, Claude Code, Cursor).  
+Auth is not required; it connects to the DB directly from the local process.
+
+### Stdio binary: Claude Desktop / Cursor config
+
+Build the release binary first:
+```bash
+cargo build --release
+```
+
+Add to your Claude Desktop `claude_desktop_config.json` (usually at `~/Library/Application Support/Claude/claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "slims-library": {
+      "command": "/absolute/path/to/target/release/mcp_stdio",
+      "env": {
+        "DB_HOST": "localhost",
+        "DB_PORT": "3306",
+        "DB_USER": "root",
+        "DB_PASSWORD": "yourpassword",
+        "DB_NAME": "slims9_bulians"
+      }
+    }
+  }
+}
+```
+
+### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_catalog` | Cari buku berdasarkan judul / pengarang / subjek / ISBN |
+| `get_book` | Detail lengkap buku beserta eksemplar & ketersediaan |
+| `list_items` | Daftar eksemplar fisik dengan filter lokasi & ketersediaan |
+| `search_members` | Cari anggota berdasarkan nama / ID anggota / email |
+| `get_member` | Detail anggota termasuk jumlah peminjaman aktif |
+| `list_loans` | Daftar peminjaman dengan filter anggota / kode item |
+| `checkout_book` | Proses peminjaman buku (validasi ketersediaan & status anggota) |
+| `return_book` | Proses pengembalian buku |
+| `get_lookups` | Ambil data referensi (lokasi, GMD, bahasa, jenis koleksi, dll.) |
+
 Development notes
 - Logging via `RUST_LOG`.
 - CORS is permissive (adjust in `build_router` if needed).

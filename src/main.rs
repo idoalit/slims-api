@@ -2,11 +2,17 @@ mod auth;
 mod config;
 mod error;
 mod jsonapi;
+mod mcp;
 mod resources;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
-use axum::{Json, Router, routing::{get, post}};
+use axum::{Json, Router, middleware, routing::{get, post}};
+use rmcp::transport::streamable_http_server::{
+    StreamableHttpServerConfig,
+    StreamableHttpService,
+    session::local::LocalSessionManager,
+};
 use serde_json::json;
 use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -16,8 +22,7 @@ use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
-    auth::extract_secret,
-    auth::login,
+    auth::{extract_secret, login, mcp_auth_middleware},
     config::{AppConfig, AppState, init_pool},
     jsonapi::{JsonApiDocument, resource, single_document},
 };
@@ -200,6 +205,16 @@ async fn main() -> anyhow::Result<()> {
 fn build_router(state: AppState) -> Router {
     let cors = CorsLayer::permissive();
 
+    let mcp_pool = state.pool.clone();
+    let mcp_service = StreamableHttpService::new(
+        move || Ok(mcp::LibraryMcpServer::new(mcp_pool.clone())),
+        Arc::new(LocalSessionManager::default()),
+        StreamableHttpServerConfig::default(),
+    );
+    let mcp_protected = Router::new()
+        .route_service("/mcp", mcp_service)
+        .route_layer(middleware::from_fn_with_state(state.clone(), mcp_auth_middleware));
+
     Router::new()
         .route("/health", get(health))
         .route("/auth/login", post(login))
@@ -212,6 +227,7 @@ fn build_router(state: AppState) -> Router {
         .nest("/files", resources::files::router())
         .nest("/contents", resources::contents::router())
         .nest("/settings", resources::settings::router())
+        .merge(mcp_protected)
         .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(TraceLayer::new_for_http())
         .layer(cors)

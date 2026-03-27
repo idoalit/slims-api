@@ -5,8 +5,10 @@ use std::{
 
 use axum::{
     Json, async_trait,
-    extract::{FromRequestParts, State},
+    extract::{FromRequestParts, Request, State},
     http::{HeaderMap, header, request::Parts},
+    middleware::Next,
+    response::Response,
 };
 use bcrypt::verify;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -145,7 +147,7 @@ impl AuthUser {
     }
 }
 
-fn extract_bearer(headers: &HeaderMap) -> Result<String, AppError> {
+pub fn extract_bearer(headers: &HeaderMap) -> Result<String, AppError> {
     let auth_header = headers
         .get(header::AUTHORIZATION)
         .ok_or_else(|| AppError::Unauthorized("Missing Authorization header".into()))?;
@@ -255,6 +257,18 @@ pub async fn login(
         token_id,
         response,
     ))))
+}
+
+/// Middleware Axum untuk memvalidasi JWT Bearer token pada endpoint MCP HTTP.
+pub async fn mcp_auth_middleware(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    let token = extract_bearer(request.headers())?;
+    let decoding_key = DecodingKey::from_secret(state.jwt_secret.as_bytes());
+    decode::<Claims>(&token, &decoding_key, &Validation::new(Algorithm::HS256))?;
+    Ok(next.run(request).await)
 }
 
 pub fn extract_secret(secret: String) -> Arc<str> {
