@@ -328,3 +328,166 @@ pub(super) struct NewBiblioRow {
     pub item_count: i64,
     pub input_date: Option<String>,
 }
+
+// ─── Stats chart input types ──────────────────────────────────────────────────
+
+/// Input universal untuk tools yang butuh periode + cara pengelompokan.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StatsPeriodInput {
+    /// Tanggal mulai (YYYY-MM-DD). Default: 30 hari lalu.
+    pub start_date: Option<String>,
+    /// Tanggal akhir (YYYY-MM-DD). Default: hari ini.
+    pub end_date: Option<String>,
+    /// Pengelompokan: "day" (default), "week", atau "month"
+    pub group_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TopBooksInput {
+    /// Tanggal mulai (YYYY-MM-DD). Default: 30 hari lalu.
+    pub start_date: Option<String>,
+    /// Tanggal akhir (YYYY-MM-DD). Default: hari ini.
+    pub end_date: Option<String>,
+    /// Jumlah buku teratas yang ditampilkan (default: 10, max: 50)
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DdcInput {
+    /// Level DDC: 1 = kelas utama (0xx–9xx), 3 = subkelas penuh (default: 1)
+    pub level: Option<u8>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DeadstockInput {
+    /// Jumlah tahun tidak dipinjam (default: 3)
+    pub years_inactive: Option<u32>,
+    /// Jumlah hasil maksimal (default: 50, max: 200)
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CostPerUseInput {
+    /// Tanggal mulai peminjaman (YYYY-MM-DD). Default: 30 hari lalu.
+    pub start_date: Option<String>,
+    /// Tanggal akhir peminjaman (YYYY-MM-DD). Default: hari ini.
+    pub end_date: Option<String>,
+    /// Harga minimum item yang disertakan dalam analisis (default: 1)
+    pub min_price: Option<i64>,
+    /// Jumlah hasil maksimal (default: 50, max: 200)
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RetentionInput {
+    /// Tahun awal kohort (default: 2 tahun lalu dari sekarang)
+    pub cohort_year: Option<i32>,
+    /// Jumlah bulan yang ditampilkan (default: 24, max: 60)
+    pub months: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct HeatmapInput {
+    /// Tanggal mulai (YYYY-MM-DD). Default: 30 hari lalu.
+    pub start_date: Option<String>,
+    /// Tanggal akhir (YYYY-MM-DD). Default: hari ini.
+    pub end_date: Option<String>,
+}
+
+// ─── Stats chart row types ────────────────────────────────────────────────────
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct PeriodCountRow {
+    pub period: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct CircTrendRow {
+    pub period: String,
+    pub new_loans: i64,
+    pub returns: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct DdcRow {
+    pub ddc_class: String,
+    pub biblio_count: i64,
+    pub item_count: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct MediaTypeRow {
+    pub media_type: String,
+    pub biblio_count: i64,
+    pub item_count: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct TopBookRow {
+    pub biblio_id: i64,
+    pub title: String,
+    pub gmd_name: Option<String>,
+    pub loan_count: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct MemberTypeLoansRow {
+    pub member_type: String,
+    pub loan_count: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct NewMemberRow {
+    pub period: String,
+    pub new_members: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct AcquisitionSourceRow {
+    pub source_label: String,
+    pub item_count: i64,
+    pub biblio_count: i64,
+    pub total_value: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct DeadstockRow {
+    pub biblio_id: i64,
+    pub title: String,
+    pub gmd_name: Option<String>,
+    pub classification: Option<String>,
+    pub item_count: i64,
+    pub last_loan_date: Option<String>,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct CostPerUseRow {
+    pub biblio_id: i64,
+    pub title: String,
+    pub gmd_name: Option<String>,
+    pub total_price: i64,
+    pub item_count: i64,
+    pub loan_count: i64,
+    pub cost_per_use: Option<i64>,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct HeatmapRow {
+    pub hour_of_day: i32,
+    pub day_of_week: i32,
+    pub visit_count: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct RetentionRow {
+    pub cohort_month: String,
+    pub registered: i64,
+    pub active: i64,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub(super) struct ItemConditionRow {
+    pub condition_label: String,
+    pub item_count: i64,
+}

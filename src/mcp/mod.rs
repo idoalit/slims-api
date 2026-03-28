@@ -12,6 +12,7 @@ mod loans;
 mod lookups;
 mod members;
 mod reports;
+mod stats;
 pub mod types;
 
 // ─── Server struct ────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ impl LibraryMcpServer {
         router.merge(Self::loans_tool_router());
         router.merge(Self::lookups_tool_router());
         router.merge(Self::reports_tool_router());
+        router.merge(Self::stats_tool_router());
         Self { pool, tool_router: router }
     }
 }
