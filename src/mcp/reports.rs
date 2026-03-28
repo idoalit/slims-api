@@ -73,14 +73,21 @@ impl LibraryMcpServer {
 
     /// Laporan keterlambatan pengembalian buku: daftar peminjaman yang melewati
     /// tanggal jatuh tempo beserta estimasi denda.
-    #[tool(description = "Overdue loans report: list of active overdue loans with estimated fines. Optional filters by member ID or item location ID.")]
+    #[tool(description = "Overdue loans report: list of active overdue loans with estimated fines within a selected due-date range. Optional filters by member ID or item location ID.")]
     async fn library_reports_overdue_loans(
         &self,
         Parameters(input): Parameters<OverdueReportInput>,
     ) -> Result<String, McpError> {
+        let today = chrono::Utc::now().date_naive();
+        let default_start = (today - chrono::Duration::days(30)).to_string();
+        let default_end = today.to_string();
+        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
+
         let mut conds = vec![
             "l.is_return = 0".to_string(),
             "l.due_date < CURDATE()".to_string(),
+            "DATE(l.due_date) BETWEEN ? AND ?".to_string(),
         ];
         if input.member_id.is_some() {
             conds.push("l.member_id = ?".to_string());
@@ -106,6 +113,7 @@ impl LibraryMcpServer {
         );
 
         let mut q = sqlx::query_as::<_, OverdueRow>(&sql);
+        q = q.bind(&start).bind(&end);
         if let Some(ref mid) = input.member_id {
             q = q.bind(mid);
         }
@@ -124,20 +132,34 @@ impl LibraryMcpServer {
 
     /// Statistik koleksi perpustakaan: total bibliografi dan eksemplar,
     /// dikelompokkan berdasarkan GMD, lokasi, dan tipe koleksi.
-    #[tool(description = "Collection overview report: total bibliographic records and item copies, grouped by material type (GMD), location, and collection type")]
+    #[tool(description = "Collection overview report for a selected date range: total bibliographic records and item copies, grouped by material type (GMD), location, and collection type")]
     async fn library_reports_collection_overview(
         &self,
-        Parameters(_input): Parameters<CollectionReportInput>,
+        Parameters(input): Parameters<CollectionReportInput>,
     ) -> Result<String, McpError> {
-        let total_biblio: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM biblio")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let today = chrono::Utc::now().date_naive();
+        let default_start = (today - chrono::Duration::days(30)).to_string();
+        let default_end = today.to_string();
+        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
 
-        let total_items: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM item")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let total_biblio: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM biblio WHERE DATE(input_date) BETWEEN ? AND ?",
+        )
+        .bind(&start)
+        .bind(&end)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        let total_items: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM item WHERE DATE(input_date) BETWEEN ? AND ?",
+        )
+        .bind(&start)
+        .bind(&end)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         let by_gmd = sqlx::query_as::<_, CollectionByGmdRow>(
             "SELECT g.gmd_name, \
@@ -145,11 +167,17 @@ impl LibraryMcpServer {
                 COUNT(i.item_id) as item_count \
              FROM mst_gmd g \
              LEFT JOIN biblio b ON b.gmd_id = g.gmd_id \
+                AND DATE(b.input_date) BETWEEN ? AND ? \
              LEFT JOIN item i ON i.biblio_id = b.biblio_id \
+                AND DATE(i.input_date) BETWEEN ? AND ? \
              GROUP BY g.gmd_id, g.gmd_name \
              HAVING biblio_count > 0 \
              ORDER BY biblio_count DESC",
         )
+        .bind(&start)
+        .bind(&end)
+        .bind(&start)
+        .bind(&end)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -158,10 +186,13 @@ impl LibraryMcpServer {
             "SELECT l.location_name, COUNT(i.item_id) as item_count \
              FROM mst_location l \
              LEFT JOIN item i ON i.location_id = l.location_id \
+                AND DATE(i.input_date) BETWEEN ? AND ? \
              GROUP BY l.location_id, l.location_name \
              HAVING item_count > 0 \
              ORDER BY item_count DESC",
         )
+        .bind(&start)
+        .bind(&end)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -170,16 +201,20 @@ impl LibraryMcpServer {
             "SELECT ct.coll_type_name, COUNT(i.item_id) as item_count \
              FROM mst_coll_type ct \
              LEFT JOIN item i ON i.coll_type_id = ct.coll_type_id \
+                AND DATE(i.input_date) BETWEEN ? AND ? \
              GROUP BY ct.coll_type_id, ct.coll_type_name \
              HAVING item_count > 0 \
              ORDER BY item_count DESC",
         )
+        .bind(&start)
+        .bind(&end)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         #[derive(Serialize)]
         struct CollectionReport {
+            period: String,
             total_biblio: i64,
             total_items: i64,
             by_gmd: Vec<CollectionByGmdRow>,
@@ -188,6 +223,7 @@ impl LibraryMcpServer {
         }
 
         serde_json::to_string_pretty(&CollectionReport {
+            period: format!("{} s/d {}", start, end),
             total_biblio,
             total_items,
             by_gmd,
@@ -199,16 +235,25 @@ impl LibraryMcpServer {
 
     /// Statistik anggota perpustakaan: breakdown per tipe keanggotaan
     /// (aktif/pending/kedaluwarsa) dan 10 peminjam terbanyak.
-    #[tool(description = "Member overview report: member counts by type (active/pending/expired) and top 10 borrowers. Optional filter by membership type.")]
+    #[tool(description = "Member overview report for a selected date range: member counts by type (active/pending/expired) and top 10 borrowers. Optional filter by membership type.")]
     async fn library_reports_member_overview(
         &self,
         Parameters(input): Parameters<MemberReportInput>,
     ) -> Result<String, McpError> {
-        let where_clause = if input.member_type_id.is_some() {
-            "WHERE m.member_type_id = ?".to_string()
-        } else {
-            String::new()
-        };
+        let today = chrono::Utc::now().date_naive();
+        let default_start = (today - chrono::Duration::days(30)).to_string();
+        let default_end = today.to_string();
+        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
+
+        let mut conds = vec![
+            "DATE(COALESCE(m.register_date, m.member_since_date, m.input_date)) BETWEEN ? AND ?"
+                .to_string(),
+        ];
+        if input.member_type_id.is_some() {
+            conds.push("m.member_type_id = ?".to_string());
+        }
+        let where_clause = format!("WHERE {}", conds.join(" AND "));
 
         let sql = format!(
             "SELECT COALESCE(mt.member_type_name, 'Tidak Terdaftar') as member_type_name, \
@@ -225,6 +270,7 @@ impl LibraryMcpServer {
         );
 
         let mut q = sqlx::query_as::<_, MemberStatRow>(&sql);
+        q = q.bind(&start).bind(&end);
         if let Some(type_id) = input.member_type_id {
             q = q.bind(type_id);
         }
@@ -234,28 +280,47 @@ impl LibraryMcpServer {
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
-        let top_borrowers = sqlx::query_as::<_, TopBorrowerRow>(
+        let mut loan_conds = vec!["DATE(l.loan_date) BETWEEN ? AND ?".to_string()];
+        if input.member_type_id.is_some() {
+            loan_conds.push("m.member_type_id = ?".to_string());
+        }
+        let top_borrowers_sql = format!(
             "SELECT m.member_id, m.member_name, \
                 COUNT(CASE WHEN l.is_return = 0 THEN 1 END) as active_loans, \
                 COUNT(*) as total_loans \
              FROM member m \
              JOIN loan l ON m.member_id = l.member_id \
+             WHERE {} \
              GROUP BY m.member_id, m.member_name \
              ORDER BY total_loans DESC \
              LIMIT 10",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+            loan_conds.join(" AND ")
+        );
+
+        let mut top_q = sqlx::query_as::<_, TopBorrowerRow>(&top_borrowers_sql);
+        top_q = top_q.bind(&start).bind(&end);
+        if let Some(type_id) = input.member_type_id {
+            top_q = top_q.bind(type_id);
+        }
+
+        let top_borrowers = top_q
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         #[derive(Serialize)]
         struct MemberReport {
+            period: String,
             by_type: Vec<MemberStatRow>,
             top_borrowers: Vec<TopBorrowerRow>,
         }
 
-        serde_json::to_string_pretty(&MemberReport { by_type, top_borrowers })
-            .map_err(|e| McpError::internal_error(e.to_string(), None))
+        serde_json::to_string_pretty(&MemberReport {
+            period: format!("{} s/d {}", start, end),
+            by_type,
+            top_borrowers,
+        })
+        .map_err(|e| McpError::internal_error(e.to_string(), None))
     }
 
     /// Laporan kunjungan perpustakaan dari tabel visitor_count.
@@ -319,18 +384,23 @@ impl LibraryMcpServer {
 
     /// Laporan denda anggota: total debet, kredit, dan sisa denda yang
     /// belum dibayar per anggota. Default hanya menampilkan yang memiliki tunggakan.
-    #[tool(description = "Fines report: total debit, credit, and outstanding balance per member. Optional filter by member ID; outstanding_only (default: true) shows unpaid balances only.")]
+    #[tool(description = "Fines report for a selected date range: total debit, credit, and outstanding balance per member. Optional filter by member ID; outstanding_only (default: true) shows unpaid balances only.")]
     async fn library_reports_fines_overview(
         &self,
         Parameters(input): Parameters<FinesReportInput>,
     ) -> Result<String, McpError> {
+        let today = chrono::Utc::now().date_naive();
+        let default_start = (today - chrono::Duration::days(30)).to_string();
+        let default_end = today.to_string();
+        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
         let outstanding_only = input.outstanding_only.unwrap_or(true);
 
-        let where_clause = if input.member_id.is_some() {
-            "WHERE f.member_id = ?".to_string()
-        } else {
-            String::new()
-        };
+        let mut where_conds = vec!["f.fines_date BETWEEN ? AND ?".to_string()];
+        if input.member_id.is_some() {
+            where_conds.push("f.member_id = ?".to_string());
+        }
+        let where_clause = format!("WHERE {}", where_conds.join(" AND "));
         let having = if outstanding_only { "HAVING outstanding > 0" } else { "" };
 
         let sql = format!(
@@ -349,6 +419,7 @@ impl LibraryMcpServer {
         );
 
         let mut q = sqlx::query_as::<_, FinesRow>(&sql);
+        q = q.bind(&start).bind(&end);
         if let Some(ref mid) = input.member_id {
             q = q.bind(mid);
         }

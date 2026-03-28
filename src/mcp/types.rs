@@ -159,6 +159,10 @@ pub struct CirculationReportInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct OverdueReportInput {
+    /// Tanggal mulai periode jatuh tempo (format: YYYY-MM-DD). Default: 30 hari lalu.
+    pub start_date: Option<String>,
+    /// Tanggal akhir periode jatuh tempo (format: YYYY-MM-DD). Default: hari ini.
+    pub end_date: Option<String>,
     /// Filter berdasarkan ID anggota (opsional)
     pub member_id: Option<String>,
     /// Filter berdasarkan ID lokasi item (opsional)
@@ -167,8 +171,10 @@ pub struct OverdueReportInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CollectionReportInput {
-    // Tidak ada filter — selalu mengembalikan statistik koleksi lengkap
-    // (total, per GMD, per lokasi, per tipe koleksi)
+    /// Tanggal mulai periode input data (format: YYYY-MM-DD). Default: 30 hari lalu.
+    pub start_date: Option<String>,
+    /// Tanggal akhir periode input data (format: YYYY-MM-DD). Default: hari ini.
+    pub end_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -183,6 +189,10 @@ pub struct NewCollectionReportInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MemberReportInput {
+    /// Tanggal mulai periode (format: YYYY-MM-DD). Default: 30 hari lalu.
+    pub start_date: Option<String>,
+    /// Tanggal akhir periode (format: YYYY-MM-DD). Default: hari ini.
+    pub end_date: Option<String>,
     /// Filter berdasarkan ID tipe anggota (opsional)
     pub member_type_id: Option<i32>,
 }
@@ -199,6 +209,10 @@ pub struct VisitorReportInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FinesReportInput {
+    /// Tanggal mulai periode transaksi denda (format: YYYY-MM-DD). Default: 30 hari lalu.
+    pub start_date: Option<String>,
+    /// Tanggal akhir periode transaksi denda (format: YYYY-MM-DD). Default: hari ini.
+    pub end_date: Option<String>,
     /// Filter berdasarkan ID anggota (opsional)
     pub member_id: Option<String>,
     /// Hanya tampilkan anggota dengan denda yang belum lunas (default: true)
