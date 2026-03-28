@@ -51,7 +51,28 @@ impl ServerHandler for LibraryMcpServer {
             env!("CARGO_PKG_VERSION"),
         ))
         .with_instructions(
-            "MCP server for the SLiMS library system. Available tools support catalog search and bibliographic detail lookup, item copy listing, member search and detail lookup, loan listing, checkout creation, return registration, library lookup/reference data retrieval, and reporting for circulation, overdue loans, collection overview, member overview, visitor activity, fines, and collection growth.",
+            "MCP server for the SLiMS library system. \
+             Tools are grouped into six areas: \
+             (1) Catalog — search bibliographic records, get full book detail. \
+             (2) Items — list item copies with availability filters. \
+             (3) Members — search members, get membership detail and loan history. \
+             (4) Loans — list loans, create checkouts, register returns. \
+             (5) Lookups — reference data: member types, locations, GMDs, collection types, item statuses, publishers, topics. \
+             (6) Reports — circulation summary, overdue loans with fines, collection overview, member overview, visitor activity, fines ledger, collection growth. \
+             (7) Stats (chart data) — time-series and distribution data ready for charting: \
+               circulation trend (loans vs returns by day/week/month), \
+               visitor trend (by day/week/month), \
+               collection composition by DDC class, \
+               physical vs digital media comparison, \
+               top N most borrowed books, \
+               loan distribution by membership type / study program, \
+               new member growth trend, \
+               acquisition source breakdown (purchase vs donation), \
+               dead-stock / inactive collection analysis, \
+               cost-per-use ROI per title, \
+               visitor heatmap (hour-of-day × day-of-week), \
+               member retention cohort analysis, \
+               item physical condition breakdown.",
         )
     }
 }
