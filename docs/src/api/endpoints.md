@@ -35,6 +35,51 @@ Below is a list of the resources available through the API. Click on each resour
 *   [Settings](#settings)
 *   [Visitors](#visitors)
 
+---
+### Public Catalog
+
+The public catalog exposes OPAC-safe bibliography data without JWT authentication. These routes use the runtime paths shown below and do not use the legacy `/api/v1` prefix found in older examples in this guide.
+
+#### List Public Biblios
+
+`GET /catalog/biblios`
+
+Supports `page[number]`, `page[size]`, `sort`, `filter[title]`, `filter[gmd_id]`, `filter[language_id]`, `fields[biblios]`, and `include`. Sorting supports `biblio_id`, `title`, `input_date`, and `last_update`; internal timestamp fields remain excluded from the response even when used for sorting.
+
+```http
+GET /catalog/biblios?page[number]=1&page[size]=10&sort=title&include=authors,publisher HTTP/1.1
+Host: localhost:3000
+Accept: application/json
+```
+
+#### Search Public Biblios
+
+`GET /catalog/biblios/search?q={keyword}`
+
+Searches titles, author names, and topics. The `q` value is required and cannot be empty. Pagination, `include`, and `fields[biblios]` work as on the public list endpoint.
+
+```http
+GET /catalog/biblios/search?q=rust&include=authors,topics HTTP/1.1
+Host: localhost:3000
+Accept: application/json
+```
+
+#### Get Public Biblio Detail
+
+`GET /catalog/biblios/{biblio_id}`
+
+```http
+GET /catalog/biblios/123?include=gmd,authors,items,attachments HTTP/1.1
+Host: localhost:3000
+Accept: application/json
+```
+
+All three endpoints return JSON:API documents with resource type `biblios`. No `Authorization` header is needed. Only bibliographies where `opac_hide` is unset or `0` are returned. Public attributes exclude `opac_hide`, `promoted`, `input_date`, and `last_update`.
+
+Supported includes are `gmd`, `publisher`, `language`, `content_type`, `media_type`, `carrier_type`, `frequency`, `place`, `authors`, `topics`, `items`, `relations`, and `attachments` (or its `files` alias). Custom fields are unavailable, attachments are restricted to `access_type=public`, and relations to OPAC-hidden bibliographies are removed.
+
+An empty search or unsupported include returns a JSON:API `400 Bad Request`. A detail ID that is missing or hidden from OPAC returns a JSON:API `404 Not Found`.
+
 ---\n
 ### Biblios
 
@@ -1161,4 +1206,3 @@ The `visitors` resource tracks records of visitors checking into the SLiMS syste
     Content-Type: application/vnd.api+json
     ```
 *   **Example Response:** (JSON:API single document, similar to an item from `Get All Visitors`)
-

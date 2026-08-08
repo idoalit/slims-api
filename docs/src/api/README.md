@@ -10,6 +10,8 @@ All API requests should be prefixed with the base URL where your SLIMS REST API 
 
 Many endpoints require authentication. The API uses JSON Web Tokens (JWT) for authentication. Please refer to the [Authentication](authentication.md) section for details on how to obtain and use JWTs.
 
+Public OPAC access is available at `/catalog/biblios`, `/catalog/biblios/search`, and `/catalog/biblios/{biblio_id}` without a JWT. See [Endpoints](endpoints.md#public-catalog) for its visibility and include rules.
+
 ## JSON:API Compliance
 
 The SLIMS REST API strictly adheres to the [JSON:API specification](https://jsonapi.org/). This means:

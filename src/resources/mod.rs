@@ -62,8 +62,12 @@ impl<'de> Deserialize<'de> for ListParams {
     {
         #[derive(Deserialize)]
         struct RawParams {
-            #[serde(flatten)]
-            pagination: Pagination,
+            // Keep pagination values as strings here. `serde_urlencoded` cannot
+            // deserialize numeric fields reliably through a flattened struct.
+            #[serde(rename = "page[number]", alias = "page", default)]
+            page_number: Option<String>,
+            #[serde(rename = "page[size]", alias = "per_page", default)]
+            page_size: Option<String>,
             #[serde(default)]
             include: Option<String>,
             #[serde(default)]
@@ -116,13 +120,51 @@ impl<'de> Deserialize<'de> for ListParams {
             .map(parse_sort_string)
             .unwrap_or_default();
 
+        let page_number = raw
+            .page_number
+            .map(|value| value.parse::<u32>().map_err(serde::de::Error::custom))
+            .transpose()?;
+        let page_size = raw
+            .page_size
+            .map(|value| value.parse::<u32>().map_err(serde::de::Error::custom))
+            .transpose()?;
+
         Ok(ListParams {
-            pagination: raw.pagination,
+            pagination: Pagination {
+                page_number,
+                page_size,
+            },
             include: raw.include,
             fields,
             filters,
             sorts,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ListParams;
+    use axum::{extract::Query, http::Uri};
+
+    #[test]
+    fn list_params_accept_json_api_pagination() {
+        let uri: Uri = "/?page%5Bnumber%5D=2&page%5Bsize%5D=12&include=authors"
+            .parse()
+            .unwrap();
+        let Query(params) = Query::<ListParams>::try_from_uri(&uri).unwrap();
+
+        let (_, _, page, per_page) = params.pagination().limit_offset();
+        assert_eq!((page, per_page), (2, 12));
+    }
+
+    #[test]
+    fn list_params_accept_pagination_aliases() {
+        let uri: Uri = "/?page=3&per_page=25".parse().unwrap();
+        let Query(params) = Query::<ListParams>::try_from_uri(&uri).unwrap();
+
+        let (_, _, page, per_page) = params.pagination().limit_offset();
+        assert_eq!((page, per_page), (3, 25));
     }
 }
 

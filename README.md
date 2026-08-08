@@ -28,6 +28,9 @@ cargo run --bin mcp_stdio
 API Overview (high level)
 - `POST /auth/login` — returns JWT.
 - `GET /health`
+- `GET /catalog/biblios` — public OPAC-safe bibliography list; no login required.
+- `GET /catalog/biblios/search?q=...` — public search across title, authors, and topics.
+- `GET /catalog/biblios/{biblio_id}` — public bibliography detail.
 - `GET /members` — paginated, optional `include=member_type`.
 - `GET /biblios` — paginated, optional `include=gmd,publisher,language,authors,topics`.
 - `GET /items` — paginated, optional `include=biblio,coll_type,location,item_status`.
@@ -41,6 +44,19 @@ API Overview (high level)
 - `POST /biblios/search/advanced` — advanced search with field-specific clauses and boolean logic.
 - Standard CRUD for members, biblios, items; loans support create/return endpoints.
 - OpenAPI docs + Swagger UI available at `/docs` (served from `/api-docs/openapi.json`).
+
+Public Catalog
+--------------
+
+The public catalog can be consumed without an `Authorization` header:
+
+```bash
+curl 'http://localhost:3000/catalog/biblios?page[number]=1&page[size]=10&sort=title&include=authors,publisher'
+curl 'http://localhost:3000/catalog/biblios/search?q=rust&include=authors,topics'
+curl 'http://localhost:3000/catalog/biblios/123?include=gmd,authors,items,attachments'
+```
+
+Only records with `opac_hide` unset or `0` are returned. Internal flags and timestamps, custom fields, private attachments, and relations to hidden records are never exposed. Supported public includes are `gmd`, `publisher`, `language`, `content_type`, `media_type`, `carrier_type`, `frequency`, `place`, `authors`, `topics`, `items`, `relations`, and `attachments` (alias: `files`). Unsupported includes return `400 Bad Request`; a missing or OPAC-hidden detail returns `404 Not Found`.
 
 Pagination & Include
 - Pagination query: `?page=1&per_page=20` (defaults: page=1, per_page=20, max 100).

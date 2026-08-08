@@ -7,11 +7,12 @@ mod resources;
 
 use std::{net::SocketAddr, sync::Arc};
 
-use axum::{Json, Router, middleware, routing::{get, post}};
+use axum::{
+    Json, Router, middleware,
+    routing::{get, post},
+};
 use rmcp::transport::streamable_http_server::{
-    StreamableHttpServerConfig,
-    StreamableHttpService,
-    session::local::LocalSessionManager,
+    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
 use serde_json::json;
 use tokio::net::TcpListener;
@@ -49,6 +50,9 @@ use crate::{
         resources::biblios::simple_search_biblios,
         resources::biblios::advanced_search_biblios,
         resources::biblios::get_biblio,
+        resources::biblios::list_public_biblios,
+        resources::biblios::search_public_biblios,
+        resources::biblios::get_public_biblio,
         resources::biblios::create_biblio,
         resources::biblios::update_biblio,
         resources::biblios::delete_biblio,
@@ -106,6 +110,8 @@ use crate::{
         resources::loans::LoanItem,
         resources::biblios::Biblio,
         resources::biblios::BiblioResponse,
+        resources::biblios::PublicBiblio,
+        resources::biblios::PublicBiblioResponse,
         resources::biblios::UpsertBiblio,
         resources::biblios::GmdInfo,
         resources::biblios::PublisherInfo,
@@ -116,6 +122,7 @@ use crate::{
         resources::biblios::FrequencyInfo,
         resources::biblios::PlaceInfo,
         resources::biblios::ItemSummary,
+        resources::biblios::PublicItemSummary,
         resources::biblios::AttachmentInfo,
         resources::biblios::BiblioRelationInfo,
         resources::biblios::AuthorInfo,
@@ -153,6 +160,7 @@ use crate::{
         (name = "Items", description = "Manajemen item"),
         (name = "Loans", description = "Sirkulasi"),
         (name = "Biblios", description = "Bibliografi"),
+        (name = "Catalog", description = "Katalog bibliografi publik"),
         (name = "Contents", description = "Konten halaman"),
         (name = "Files", description = "Manajemen berkas"),
         (name = "Lookups", description = "Data referensi"),
@@ -213,7 +221,10 @@ fn build_router(state: AppState) -> Router {
     );
     let mcp_protected = Router::new()
         .route_service("/mcp", mcp_service)
-        .route_layer(middleware::from_fn_with_state(state.clone(), mcp_auth_middleware));
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            mcp_auth_middleware,
+        ));
 
     Router::new()
         .route("/health", get(health))
@@ -222,6 +233,7 @@ fn build_router(state: AppState) -> Router {
         .nest("/items", resources::items::router())
         .nest("/loans", resources::loans::router())
         .nest("/biblios", resources::biblios::router())
+        .nest("/catalog/biblios", resources::biblios::public_router())
         .nest("/lookups", resources::lookups::router())
         .nest("/visitors", resources::visitors::router())
         .nest("/files", resources::files::router())
@@ -241,5 +253,40 @@ fn build_router(state: AppState) -> Router {
     tag = "Health"
 )]
 async fn health() -> Json<JsonApiDocument> {
-    Json(single_document(resource("health", "health", json!({ "status": "ok" }))))
+    Json(single_document(resource(
+        "health",
+        "health",
+        json!({ "status": "ok" }),
+    )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn openapi_marks_catalog_as_public_and_keeps_biblios_protected() {
+        let document = serde_json::to_value(ApiDoc::openapi()).expect("OpenAPI serializes");
+        let paths = &document["paths"];
+
+        for path in [
+            "/catalog/biblios",
+            "/catalog/biblios/search",
+            "/catalog/biblios/{biblio_id}",
+        ] {
+            assert!(
+                paths[path]["get"].is_object(),
+                "missing OpenAPI path {path}"
+            );
+            assert!(
+                paths[path]["get"].get("security").is_none(),
+                "public catalog path {path} must not require bearerAuth"
+            );
+        }
+
+        assert_eq!(
+            paths["/biblios"]["get"]["security"][0]["bearerAuth"],
+            serde_json::json!([])
+        );
+    }
 }

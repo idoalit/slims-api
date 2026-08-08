@@ -2,6 +2,18 @@
 
 The SLIMS REST API uses JSON Web Tokens (JWTs) for authenticating requests. This section explains how to obtain an authentication token and how to use it to access protected API endpoints.
 
+## Endpoints Without Authentication
+
+The following endpoints are intentionally public and must be called without first logging in:
+
+* `GET /health`
+* `POST /auth/login`
+* `GET /catalog/biblios`
+* `GET /catalog/biblios/search?q={keyword}`
+* `GET /catalog/biblios/{biblio_id}`
+
+The public catalog applies OPAC visibility and data-exposure rules. The protected `/biblios` endpoints remain available for staff and continue to require a JWT with the appropriate Bibliography module permission.
+
 ## JSON Web Tokens (JWT)
 
 JWTs are an open, industry-standard RFC 7519 method for representing claims securely between two parties. The API issues JWTs upon successful login, and these tokens are then used by clients to prove their identity for subsequent requests.
