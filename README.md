@@ -16,9 +16,14 @@ Configuration
 
 Run
 ```bash
-cargo run
+cargo run --bin slims-rest-api
 ```
 Server listens on `BIND_ADDR`.
+
+To run the MCP stdio server instead:
+```bash
+cargo run --bin mcp_stdio
+```
 
 API Overview (high level)
 - `POST /auth/login` — returns JWT.
