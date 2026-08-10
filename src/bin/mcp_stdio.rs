@@ -25,6 +25,8 @@ use rmcp::ServiceExt;
 use sqlx::mysql::MySqlPoolOptions;
 use tracing_subscriber::EnvFilter;
 
+#[path = "../analytics.rs"]
+mod analytics;
 #[path = "../mcp/mod.rs"]
 mod mcp;
 

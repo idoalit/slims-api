@@ -1,5 +1,6 @@
 pub mod biblios;
 pub mod contents;
+pub mod dashboard;
 pub mod files;
 pub mod items;
 pub mod loans;
@@ -10,9 +11,9 @@ pub mod visitors;
 
 use serde::Deserialize;
 use sqlx::{
+    MySql,
     mysql::MySqlArguments,
     query::{QueryAs, QueryScalar},
-    MySql,
 };
 use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
@@ -327,10 +328,7 @@ impl<'a> FilterField<'a> {
         }
     }
 
-    fn to_clause(
-        &self,
-        raw_value: &str,
-    ) -> Result<(String, FilterValue), crate::error::AppError> {
+    fn to_clause(&self, raw_value: &str) -> Result<(String, FilterValue), crate::error::AppError> {
         let (statement, value) = match self.operator {
             FilterOperator::Equals => {
                 let value = self.parse_value(raw_value)?;
@@ -344,21 +342,20 @@ impl<'a> FilterField<'a> {
         Ok((statement, value))
     }
 
-    fn parse_value(
-        &self,
-        raw_value: &str,
-    ) -> Result<FilterValue, crate::error::AppError> {
+    fn parse_value(&self, raw_value: &str) -> Result<FilterValue, crate::error::AppError> {
         match self.value_type {
             FilterValueType::Text => Ok(FilterValue::Text(raw_value.to_string())),
-            FilterValueType::Integer => raw_value
-                .parse::<i64>()
-                .map(FilterValue::Integer)
-                .map_err(|_| {
-                    crate::error::AppError::BadRequest(format!(
-                        "filter `{}` must be an integer",
-                        self.name
-                    ))
-                }),
+            FilterValueType::Integer => {
+                raw_value
+                    .parse::<i64>()
+                    .map(FilterValue::Integer)
+                    .map_err(|_| {
+                        crate::error::AppError::BadRequest(format!(
+                            "filter `{}` must be an integer",
+                            self.name
+                        ))
+                    })
+            }
             FilterValueType::Boolean => match raw_value {
                 "true" | "1" => Ok(FilterValue::Boolean(true)),
                 "false" | "0" => Ok(FilterValue::Boolean(false)),
@@ -400,7 +397,6 @@ impl FilterValue {
             FilterValue::Boolean(val) => query.bind(*val),
         }
     }
-
 }
 
 #[derive(Clone)]

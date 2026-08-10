@@ -402,33 +402,11 @@ pub(super) struct PeriodCountRow {
     pub count: i64,
 }
 
-#[derive(Debug, Serialize)]
-pub(super) struct CircTrendRow {
-    pub period: String,
-    pub new_loans: i64,
-    pub returns: i64,
-}
-
-#[derive(Debug, sqlx::FromRow, Serialize)]
-pub(super) struct DdcRow {
-    pub ddc_class: String,
-    pub biblio_count: i64,
-    pub item_count: i64,
-}
-
 #[derive(Debug, sqlx::FromRow, Serialize)]
 pub(super) struct MediaTypeRow {
     pub media_type: String,
     pub biblio_count: i64,
     pub item_count: i64,
-}
-
-#[derive(Debug, sqlx::FromRow, Serialize)]
-pub(super) struct TopBookRow {
-    pub biblio_id: i64,
-    pub title: String,
-    pub gmd_name: Option<String>,
-    pub loan_count: i64,
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize)]

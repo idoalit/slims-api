@@ -125,26 +125,59 @@ fn user_to_role(user: &User) -> Role {
 }
 
 impl AuthUser {
+    pub fn can_access(&self, module: ModuleAccess, permission: Permission) -> bool {
+        let access = self
+            .claims
+            .access
+            .iter()
+            .find(|item| item.module_id == module.id());
+        match (access, permission) {
+            (Some(access), Permission::Read) => access.read || access.write,
+            (Some(access), Permission::Write) => access.write,
+            _ => false,
+        }
+    }
+
     pub fn require_access(
         &self,
         module: ModuleAccess,
         permission: Permission,
     ) -> Result<(), AppError> {
-        let module_id = module.id();
-        let can_access = self.claims.access.iter().find(|a| a.module_id == module_id);
-
-        let allowed = match (can_access, permission) {
-            (Some(access), Permission::Read) => access.read || access.write,
-            (Some(access), Permission::Write) => access.write,
-            _ => false,
-        };
-
-        if allowed {
+        if self.can_access(module, permission) {
             Ok(())
         } else {
             Err(AppError::Forbidden("insufficient permissions".into()))
         }
     }
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CurrentUserResponse {
+    pub username: String,
+    pub role: Role,
+    pub access: Vec<ModulePermission>,
+    pub expires_at: usize,
+}
+
+#[utoipa::path(
+    get,
+    path = "/auth/me",
+    responses((status = 200, body = JsonApiDocument), (status = 401)),
+    security(("bearerAuth" = [])),
+    tag = "Auth"
+)]
+pub async fn me(auth: AuthUser) -> Json<JsonApiDocument> {
+    let claims = auth.claims;
+    Json(single_document(resource(
+        "users",
+        claims.sub.to_string(),
+        CurrentUserResponse {
+            username: claims.username,
+            role: claims.role,
+            access: claims.access,
+            expires_at: claims.exp,
+        },
+    )))
 }
 
 pub fn extract_bearer(headers: &HeaderMap) -> Result<String, AppError> {
@@ -253,9 +286,7 @@ pub async fn login(
 
     let token_id = response.token.clone();
     Ok(Json(single_document(resource(
-        "tokens",
-        token_id,
-        response,
+        "tokens", token_id, response,
     ))))
 }
 
@@ -325,4 +356,44 @@ async fn fetch_group_access(
             write: row.w != 0,
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn auth_user(access: Vec<ModulePermission>) -> AuthUser {
+        AuthUser {
+            claims: Claims {
+                sub: 1,
+                username: "tester".into(),
+                role: Role::Staff,
+                access,
+                exp: usize::MAX,
+            },
+        }
+    }
+
+    #[test]
+    fn permissions_are_module_aware() {
+        let user = auth_user(vec![ModulePermission {
+            module_id: ModuleAccess::Bibliography.id(),
+            read: true,
+            write: false,
+        }]);
+
+        assert!(user.can_access(ModuleAccess::Bibliography, Permission::Read));
+        assert!(!user.can_access(ModuleAccess::Bibliography, Permission::Write));
+        assert!(!user.can_access(ModuleAccess::Membership, Permission::Read));
+    }
+
+    #[test]
+    fn write_permission_implies_read() {
+        let user = auth_user(vec![ModulePermission {
+            module_id: ModuleAccess::Circulation.id(),
+            read: false,
+            write: true,
+        }]);
+        assert!(user.can_access(ModuleAccess::Circulation, Permission::Read));
+    }
 }

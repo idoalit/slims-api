@@ -22,3 +22,6 @@ utoipa = { version = "4", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "7", features = ["axum"] }
 rmcp = { version = "1.3.0", features = ["server", "transport-io", "transport-streamable-http-server", "macros"] }
 schemars = "1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

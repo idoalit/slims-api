@@ -1,10 +1,9 @@
-use std::collections::BTreeMap;
-
 use chrono::Datelike as _;
 use rmcp::{ErrorData as McpError, handler::server::wrapper::Parameters, tool, tool_router};
 use serde::Serialize;
 
 use super::{LibraryMcpServer, types::*};
+use crate::analytics;
 
 #[tool_router(router = stats_tool_router, vis = "pub(crate)")]
 impl LibraryMcpServer {
@@ -12,7 +11,9 @@ impl LibraryMcpServer {
 
     /// Data tren peminjaman baru vs pengembalian per hari/minggu/bulan.
     /// Cocok untuk line chart perbandingan sirkulasi.
-    #[tool(description = "Circulation trend data (new loans vs returns) grouped by day, week, or month. Returns a time-series array suitable for a line chart. group_by: \"day\" (default) | \"week\" | \"month\".")]
+    #[tool(
+        description = "Circulation trend data (new loans vs returns) grouped by day, week, or month. Returns a time-series array suitable for a line chart. group_by: \"day\" (default) | \"week\" | \"month\"."
+    )]
     async fn library_stats_circulation_trend(
         &self,
         Parameters(input): Parameters<StatsPeriodInput>,
@@ -20,52 +21,22 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
         let group_by = input.group_by.as_deref().unwrap_or("day");
-        let fmt = date_format_for(group_by);
-
-        let loans_sql = format!(
-            "SELECT DATE_FORMAT(loan_date, '{fmt}') as period, COUNT(*) as count \
-             FROM loan WHERE DATE(loan_date) BETWEEN ? AND ? \
-             GROUP BY period ORDER BY period",
-            fmt = fmt
-        );
-        let loan_rows = sqlx::query_as::<_, PeriodCountRow>(&loans_sql)
-            .bind(&start)
-            .bind(&end)
-            .fetch_all(&self.pool)
+        let start_date = chrono::NaiveDate::parse_from_str(&start, "%Y-%m-%d")
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let end_date = chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d")
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let trend = analytics::circulation_trend(&self.pool, start_date, end_date, group_by)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        let returns_sql = format!(
-            "SELECT DATE_FORMAT(return_date, '{fmt}') as period, COUNT(*) as count \
-             FROM loan WHERE is_return = 1 AND DATE(return_date) BETWEEN ? AND ? \
-             GROUP BY period ORDER BY period",
-            fmt = fmt
-        );
-        let return_rows = sqlx::query_as::<_, PeriodCountRow>(&returns_sql)
-            .bind(&start)
-            .bind(&end)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        let mut map: BTreeMap<String, (i64, i64)> = BTreeMap::new();
-        for r in &loan_rows {
-            map.entry(r.period.clone()).or_default().0 = r.count;
-        }
-        for r in &return_rows {
-            map.entry(r.period.clone()).or_default().1 = r.count;
-        }
-
-        let total_new_loans: i64 = loan_rows.iter().map(|r| r.count).sum();
-        let total_returns: i64 = return_rows.iter().map(|r| r.count).sum();
-
-        let trend: Vec<CircTrendRow> = map
-            .into_iter()
-            .map(|(period, (new_loans, returns))| CircTrendRow { period, new_loans, returns })
-            .collect();
+        let total_new_loans: i64 = trend.iter().map(|row| row.new_loans).sum();
+        let total_returns: i64 = trend.iter().map(|row| row.returns).sum();
 
         #[derive(Serialize)]
         struct CircSummary {
@@ -77,13 +48,16 @@ impl LibraryMcpServer {
             period: String,
             group_by: String,
             summary: CircSummary,
-            trend: Vec<CircTrendRow>,
+            trend: Vec<analytics::CirculationPoint>,
         }
 
         serde_json::to_string_pretty(&CircTrendReport {
             period: format!("{} s/d {}", start, end),
             group_by: group_by.to_owned(),
-            summary: CircSummary { total_new_loans, total_returns },
+            summary: CircSummary {
+                total_new_loans,
+                total_returns,
+            },
             trend,
         })
         .map_err(|e| McpError::internal_error(e.to_string(), None))
@@ -93,7 +67,9 @@ impl LibraryMcpServer {
 
     /// Data tren kunjungan perpustakaan per hari/minggu/bulan dari tabel visitor_count.
     /// Cocok untuk line chart kepadatan kunjungan.
-    #[tool(description = "Visitor trend data grouped by day, week, or month — suitable for a line chart. group_by: \"day\" (default) | \"week\" | \"month\".")]
+    #[tool(
+        description = "Visitor trend data grouped by day, week, or month — suitable for a line chart. group_by: \"day\" (default) | \"week\" | \"month\"."
+    )]
     async fn library_stats_visitor_trend(
         &self,
         Parameters(input): Parameters<StatsPeriodInput>,
@@ -101,7 +77,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
         let group_by = input.group_by.as_deref().unwrap_or("day");
         let fmt = date_format_for(group_by);
@@ -143,39 +123,16 @@ impl LibraryMcpServer {
     /// Distribusi koleksi berdasarkan kelas DDC (Dewey Decimal Classification).
     /// Level 1 menampilkan 10 kelas utama (0xx–9xx), level 3 menampilkan subkelas.
     /// Cocok untuk pie chart atau bar chart komposisi DDC.
-    #[tool(description = "Collection composition by DDC classification. level=1 (default) shows main classes (0xx–9xx), level=3 shows full DDC subclasses. Suitable for a pie or bar chart.")]
+    #[tool(
+        description = "Collection composition by DDC classification. level=1 (default) shows main classes (0xx–9xx), level=3 shows full DDC subclasses. Suitable for a pie or bar chart."
+    )]
     async fn library_stats_collection_by_ddc(
         &self,
         Parameters(input): Parameters<DdcInput>,
     ) -> Result<String, McpError> {
         let level = input.level.unwrap_or(1).clamp(1, 3) as usize;
 
-        // Untuk level 1: ambil 1 digit pertama lalu tambahkan "xx"
-        // Untuk level 3: ambil 3 digit pertama
-        let (select_expr, label_suffix) = if level == 1 {
-            (
-                "CONCAT(LEFT(b.classification, 1), 'xx') as ddc_class".to_string(),
-                "",
-            )
-        } else {
-            ("LEFT(b.classification, 3) as ddc_class".to_string(), "")
-        };
-        let _ = label_suffix;
-
-        let sql = format!(
-            "SELECT {select} , \
-                COUNT(DISTINCT b.biblio_id) as biblio_count, \
-                COUNT(i.item_id) as item_count \
-             FROM biblio b \
-             LEFT JOIN item i ON i.biblio_id = b.biblio_id \
-             WHERE b.classification IS NOT NULL AND b.classification != '' \
-             GROUP BY ddc_class \
-             ORDER BY biblio_count DESC",
-            select = select_expr
-        );
-
-        let rows = sqlx::query_as::<_, DdcRow>(&sql)
-            .fetch_all(&self.pool)
+        let rows = analytics::collection_by_ddc(&self.pool, level as u8)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
@@ -183,12 +140,16 @@ impl LibraryMcpServer {
         struct DdcReport {
             level: usize,
             description: &'static str,
-            data: Vec<DdcRow>,
+            data: Vec<analytics::DdcPoint>,
         }
 
         serde_json::to_string_pretty(&DdcReport {
             level,
-            description: if level == 1 { "Main DDC classes (0xx–9xx)" } else { "DDC subclasses (3-digit)" },
+            description: if level == 1 {
+                "Main DDC classes (0xx–9xx)"
+            } else {
+                "DDC subclasses (3-digit)"
+            },
             data: rows,
         })
         .map_err(|e| McpError::internal_error(e.to_string(), None))
@@ -200,10 +161,10 @@ impl LibraryMcpServer {
     /// Digital: Computer File (CF), Electronic Resource (ER), Computer Software (CO),
     /// Music (MU), Sound Recording (SO), Video Recording (VI).
     /// Cocok untuk pie chart atau stacked bar.
-    #[tool(description = "Physical vs digital collection comparison based on GMD type. Digital GMDs: CF, ER, CO, MU, SO, VI. Returns biblio_count and item_count per media type — suitable for pie chart.")]
-    async fn library_stats_media_type_comparison(
-        &self,
-    ) -> Result<String, McpError> {
+    #[tool(
+        description = "Physical vs digital collection comparison based on GMD type. Digital GMDs: CF, ER, CO, MU, SO, VI. Returns biblio_count and item_count per media type — suitable for pie chart."
+    )]
+    async fn library_stats_media_type_comparison(&self) -> Result<String, McpError> {
         let rows = sqlx::query_as::<_, MediaTypeRow>(
             "SELECT \
                 CASE WHEN UPPER(g.gmd_code) IN ('CF','ER','CO','MU','SO','VI') \
@@ -228,7 +189,9 @@ impl LibraryMcpServer {
 
     /// Daftar buku terpopuler berdasarkan jumlah peminjaman dalam periode tertentu.
     /// Cocok untuk horizontal bar chart.
-    #[tool(description = "Top N most borrowed books by loan count within a date range. limit: default 10, max 50. Suitable for horizontal bar chart.")]
+    #[tool(
+        description = "Top N most borrowed books by loan count within a date range. limit: default 10, max 50. Suitable for horizontal bar chart."
+    )]
     async fn library_stats_top_books(
         &self,
         Parameters(input): Parameters<TopBooksInput>,
@@ -236,32 +199,25 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
         let limit = input.limit.unwrap_or(10).min(50) as i64;
-
-        let rows = sqlx::query_as::<_, TopBookRow>(
-            "SELECT b.biblio_id, b.title, g.gmd_name, COUNT(l.loan_id) as loan_count \
-             FROM loan l \
-             JOIN item i ON l.item_code = i.item_code \
-             JOIN biblio b ON i.biblio_id = b.biblio_id \
-             LEFT JOIN mst_gmd g ON b.gmd_id = g.gmd_id \
-             WHERE DATE(l.loan_date) BETWEEN ? AND ? \
-             GROUP BY b.biblio_id, b.title, g.gmd_name \
-             ORDER BY loan_count DESC \
-             LIMIT ?",
-        )
-        .bind(&start)
-        .bind(&end)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let start_date = chrono::NaiveDate::parse_from_str(&start, "%Y-%m-%d")
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let end_date = chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d")
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let rows = analytics::top_books(&self.pool, start_date, end_date, limit)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         #[derive(Serialize)]
         struct TopBooksReport {
             period: String,
-            data: Vec<TopBookRow>,
+            data: Vec<analytics::TopBook>,
         }
 
         serde_json::to_string_pretty(&TopBooksReport {
@@ -275,7 +231,9 @@ impl LibraryMcpServer {
 
     /// Distribusi peminjaman berdasarkan tipe keanggotaan (Program Studi / Unit Kerja).
     /// Cocok untuk pie chart atau bar chart komposisi peminjam.
-    #[tool(description = "Loan distribution by membership type (representing faculty/department/study program) within a date range. Suitable for pie or bar chart. group_by is ignored for this tool.")]
+    #[tool(
+        description = "Loan distribution by membership type (representing faculty/department/study program) within a date range. Suitable for pie or bar chart. group_by is ignored for this tool."
+    )]
     async fn library_stats_loans_by_member_type(
         &self,
         Parameters(input): Parameters<StatsPeriodInput>,
@@ -283,7 +241,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
 
         let rows = sqlx::query_as::<_, MemberTypeLoansRow>(
@@ -319,7 +281,9 @@ impl LibraryMcpServer {
 
     /// Data pertumbuhan anggota baru per bulan atau tahun.
     /// Cocok untuk bar chart atau area chart pertumbuhan anggota.
-    #[tool(description = "New member growth trend grouped by month or year. group_by: \"month\" (default) | \"year\". Suitable for bar or area chart.")]
+    #[tool(
+        description = "New member growth trend grouped by month or year. group_by: \"month\" (default) | \"year\". Suitable for bar or area chart."
+    )]
     async fn library_stats_member_growth(
         &self,
         Parameters(input): Parameters<StatsPeriodInput>,
@@ -327,7 +291,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(365)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
         let group_by = input.group_by.as_deref().unwrap_or("month");
         let fmt = if group_by == "year" { "%Y" } else { "%Y-%m" };
@@ -373,7 +341,9 @@ impl LibraryMcpServer {
     /// Distribusi sumber pengadaan koleksi (Pembelian vs Hibah vs lain-lain).
     /// Berdasarkan field `source` di tabel item: 0=Pembelian, 1=Hibah.
     /// Cocok untuk stacked bar chart atau pie chart pengadaan.
-    #[tool(description = "Collection acquisition source breakdown (Purchase vs Donation vs Other) based on item.source field for items added in the selected date range. Suitable for stacked bar or pie chart.")]
+    #[tool(
+        description = "Collection acquisition source breakdown (Purchase vs Donation vs Other) based on item.source field for items added in the selected date range. Suitable for stacked bar or pie chart."
+    )]
     async fn library_stats_acquisition_by_source(
         &self,
         Parameters(input): Parameters<StatsPeriodInput>,
@@ -381,7 +351,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
 
         let rows = sqlx::query_as::<_, AcquisitionSourceRow>(
@@ -422,7 +396,9 @@ impl LibraryMcpServer {
 
     /// Daftar koleksi yang tidak pernah dipinjam dalam N tahun terakhir (dead wood).
     /// Berguna untuk evaluasi & deseleksi koleksi.
-    #[tool(description = "Dead stock / dead wood report: books never borrowed or with no loans in the last N years. years_inactive: default 3. limit: default 50, max 200.")]
+    #[tool(
+        description = "Dead stock / dead wood report: books never borrowed or with no loans in the last N years. years_inactive: default 3. limit: default 50, max 200."
+    )]
     async fn library_stats_deadstock(
         &self,
         Parameters(input): Parameters<DeadstockInput>,
@@ -470,7 +446,9 @@ impl LibraryMcpServer {
     /// Analisis ROI (Return on Investment) per judul buku: harga beli dibagi
     /// jumlah peminjaman dalam periode. Nilai rendah = lebih cost-effective.
     /// Hanya item yang memiliki data harga yang disertakan.
-    #[tool(description = "Cost-per-use ROI analysis per book: item price divided by loan count in selected period. Items with price=0 or NULL are excluded. min_price filter (default 1). Suitable for scatter or bar chart.")]
+    #[tool(
+        description = "Cost-per-use ROI analysis per book: item price divided by loan count in selected period. Items with price=0 or NULL are excluded. min_price filter (default 1). Suitable for scatter or bar chart."
+    )]
     async fn library_stats_cost_per_use(
         &self,
         Parameters(input): Parameters<CostPerUseInput>,
@@ -478,7 +456,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
         let min_price = input.min_price.unwrap_or(1).max(0);
         let limit = input.limit.unwrap_or(50).min(200) as i64;
@@ -528,7 +510,9 @@ impl LibraryMcpServer {
 
     /// Data heatmap kunjungan per jam (0-23) dan hari dalam seminggu (1=Minggu–7=Sabtu).
     /// Cocok untuk punch card chart atau heatmap.
-    #[tool(description = "Visitor heatmap data: visit counts by hour of day (0–23) and day of week (1=Sunday–7=Saturday). Suitable for punch card or heatmap chart.")]
+    #[tool(
+        description = "Visitor heatmap data: visit counts by hour of day (0–23) and day of week (1=Sunday–7=Saturday). Suitable for punch card or heatmap chart."
+    )]
     async fn library_stats_visitor_heatmap(
         &self,
         Parameters(input): Parameters<HeatmapInput>,
@@ -536,7 +520,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
 
         let rows = sqlx::query_as::<_, HeatmapRow>(
@@ -574,7 +562,9 @@ impl LibraryMcpServer {
 
     /// Analisis retensi anggota: jumlah anggota yang mendaftar per bulan (kohort)
     /// dan berapa yang masih aktif saat ini. Berguna untuk cohort analysis.
-    #[tool(description = "Member retention cohort analysis: members registered per month vs how many are still active today. cohort_year: start year (default: 2 years ago). months: number of months shown (default 24, max 60).")]
+    #[tool(
+        description = "Member retention cohort analysis: members registered per month vs how many are still active today. cohort_year: start year (default: 2 years ago). months: number of months shown (default 24, max 60)."
+    )]
     async fn library_stats_member_retention(
         &self,
         Parameters(input): Parameters<RetentionInput>,
@@ -645,10 +635,10 @@ impl LibraryMcpServer {
     /// Distribusi kondisi fisik koleksi berdasarkan item_status.
     /// NULL item_status_id = Baik/Normal; R=Repair; NL=No Loan; MIS=Missing.
     /// Cocok untuk pie chart atau donut chart kondisi koleksi.
-    #[tool(description = "Physical condition of collection items, grouped by item status. NULL status = Good/Normal, R = Repair, NL = No Loan, MIS = Missing. Suitable for pie or donut chart.")]
-    async fn library_stats_item_condition(
-        &self,
-    ) -> Result<String, McpError> {
+    #[tool(
+        description = "Physical condition of collection items, grouped by item status. NULL status = Good/Normal, R = Repair, NL = No Loan, MIS = Missing. Suitable for pie or donut chart."
+    )]
+    async fn library_stats_item_condition(&self) -> Result<String, McpError> {
         let rows = sqlx::query_as::<_, ItemConditionRow>(
             "SELECT \
                 COALESCE(s.item_status_name, 'Baik/Normal') as condition_label, \

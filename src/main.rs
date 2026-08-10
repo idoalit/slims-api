@@ -1,3 +1,4 @@
+mod analytics;
 mod auth;
 mod config;
 mod error;
@@ -8,7 +9,9 @@ mod resources;
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    Json, Router, middleware,
+    Json, Router,
+    http::{HeaderValue, Method, header},
+    middleware,
     routing::{get, post},
 };
 use rmcp::transport::streamable_http_server::{
@@ -16,14 +19,17 @@ use rmcp::transport::streamable_http_server::{
 };
 use serde_json::json;
 use tokio::net::TcpListener;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    trace::TraceLayer,
+};
 use tracing_subscriber::EnvFilter;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
-    auth::{extract_secret, login, mcp_auth_middleware},
+    auth::{extract_secret, login, mcp_auth_middleware, me},
     config::{AppConfig, AppState, init_pool},
     jsonapi::{JsonApiDocument, resource, single_document},
 };
@@ -32,6 +38,8 @@ use crate::{
 #[openapi(
     paths(
         auth::login,
+        auth::me,
+        resources::dashboard::get_dashboard,
         health,
         resources::members::list_members,
         resources::members::get_member,
@@ -86,11 +94,19 @@ use crate::{
     components(schemas(
         auth::LoginRequest,
         auth::AuthResponse,
+        auth::CurrentUserResponse,
         auth::Role,
         auth::ModuleAccess,
         auth::Permission,
         auth::ModulePermission,
         auth::Claims,
+        analytics::CirculationPoint,
+        analytics::DdcPoint,
+        analytics::TopBook,
+        resources::dashboard::DashboardParams,
+        resources::dashboard::DashboardPeriod,
+        resources::dashboard::DashboardMetrics,
+        resources::dashboard::DashboardResponse,
         resources::members::Member,
         resources::members::MemberTypeInfo,
         resources::members::MemberResponse,
@@ -156,6 +172,7 @@ use crate::{
     )),
     tags(
         (name = "Auth", description = "Autentikasi"),
+        (name = "Dashboard", description = "Ringkasan dan analitik admin"),
         (name = "Members", description = "Manajemen member"),
         (name = "Items", description = "Manajemen item"),
         (name = "Loans", description = "Sirkulasi"),
@@ -211,7 +228,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn build_router(state: AppState) -> Router {
-    let cors = CorsLayer::permissive();
+    let cors = cors_layer();
 
     let mcp_pool = state.pool.clone();
     let mcp_service = StreamableHttpService::new(
@@ -229,6 +246,8 @@ fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/auth/login", post(login))
+        .route("/auth/me", get(me))
+        .nest("/dashboard", resources::dashboard::router())
         .nest("/members", resources::members::router())
         .nest("/items", resources::items::router())
         .nest("/loans", resources::loans::router())
@@ -244,6 +263,26 @@ fn build_router(state: AppState) -> Router {
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state)
+}
+
+fn cors_layer() -> CorsLayer {
+    let configured = std::env::var("CORS_ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| "http://localhost:5173,http://127.0.0.1:5173".into());
+    let origins = configured
+        .split(',')
+        .filter_map(|origin| origin.trim().parse::<HeaderValue>().ok())
+        .collect::<Vec<_>>();
+
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
 }
 
 #[utoipa::path(
@@ -263,6 +302,12 @@ async fn health() -> Json<JsonApiDocument> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use sqlx::mysql::MySqlPoolOptions;
+    use tower::ServiceExt;
 
     #[test]
     fn openapi_marks_catalog_as_public_and_keeps_biblios_protected() {
@@ -288,5 +333,33 @@ mod tests {
             paths["/biblios"]["get"]["security"][0]["bearerAuth"],
             serde_json::json!([])
         );
+
+        for path in ["/auth/me", "/dashboard"] {
+            assert_eq!(
+                paths[path]["get"]["security"][0]["bearerAuth"],
+                serde_json::json!([])
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn protected_admin_endpoints_reject_missing_token() {
+        let pool = MySqlPoolOptions::new()
+            .connect_lazy("mysql://root:password@127.0.0.1/test")
+            .expect("lazy pool");
+        let state = AppState {
+            pool,
+            jwt_secret: extract_secret("test-secret".into()),
+        };
+        let app = build_router(state);
+
+        for path in ["/auth/me", "/dashboard"] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        }
     }
 }

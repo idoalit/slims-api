@@ -11,6 +11,7 @@ Configuration
 - Copy `.env` and set:
   - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
   - `JWT_SECRET`
+  - `CORS_ALLOWED_ORIGINS` (comma-separated; set to the exact frontend origins)
   - `BIND_ADDR` (default `0.0.0.0:3000`)
 - The app builds a MySQL URL from those vars if `DATABASE_URL` is not provided.
 
@@ -27,6 +28,8 @@ cargo run --bin mcp_stdio
 
 API Overview (high level)
 - `POST /auth/login` — returns JWT.
+- `GET /auth/me` — validates a bearer token and returns the current user's role, module permissions, and expiry.
+- `GET /dashboard?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&group_by=day|week|month` — permission-aware repository analytics.
 - `GET /health`
 - `GET /catalog/biblios` — public OPAC-safe bibliography list; no login required.
 - `GET /catalog/biblios/search?q=...` — public search across title, authors, and topics.
@@ -44,6 +47,8 @@ API Overview (high level)
 - `POST /biblios/search/advanced` — advanced search with field-specific clauses and boolean logic.
 - Standard CRUD for members, biblios, items; loans support create/return endpoints.
 - OpenAPI docs + Swagger UI available at `/docs` (served from `/api-docs/openapi.json`).
+
+Dashboard fields are returned as `null` when the authenticated user lacks read access to the corresponding module. Bibliography controls bibliography/item/DDC data, Membership controls member totals, and Circulation controls loan KPIs, trends, and popular books. Date ranges default to the latest 30 days and may span at most 366 days.
 
 Public Catalog
 --------------
@@ -150,5 +155,5 @@ Add to your Claude Desktop `claude_desktop_config.json` (usually at `~/Library/A
 
 Development notes
 - Logging via `RUST_LOG`.
-- CORS is permissive (adjust in `build_router` if needed).
+- CORS uses the `CORS_ALLOWED_ORIGINS` allowlist and defaults to local Vite development origins.
 - Add data via SQL imports before running.
