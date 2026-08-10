@@ -29,7 +29,7 @@ use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
-    auth::{extract_secret, login, mcp_auth_middleware, me},
+    auth::{extract_secret, login, logout, mcp_auth_middleware, me, refresh},
     config::{AppConfig, AppState, init_pool},
     jsonapi::{JsonApiDocument, resource, single_document},
 };
@@ -38,6 +38,8 @@ use crate::{
 #[openapi(
     paths(
         auth::login,
+        auth::refresh,
+        auth::logout,
         auth::me,
         resources::dashboard::get_dashboard,
         health,
@@ -214,8 +216,18 @@ async fn main() -> anyhow::Result<()> {
 
     let config = AppConfig::from_env()?;
     let pool = init_pool(&config.database_url).await?;
+    sqlx::migrate!().run(&pool).await?;
     let jwt_secret = extract_secret(config.jwt_secret);
-    let state = AppState { pool, jwt_secret };
+    let state = AppState {
+        pool,
+        jwt_secret,
+        jwt_issuer: extract_secret(config.jwt_issuer),
+        jwt_audience: extract_secret(config.jwt_audience),
+        access_token_ttl: config.access_token_ttl,
+        refresh_session_ttl: config.refresh_session_ttl,
+        refresh_remember_ttl: config.refresh_remember_ttl,
+        cookie_secure: config.cookie_secure,
+    };
 
     let app = build_router(state.clone());
 
@@ -246,6 +258,8 @@ fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/auth/login", post(login))
+        .route("/auth/refresh", post(refresh))
+        .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
         .nest("/dashboard", resources::dashboard::router())
         .nest("/members", resources::members::router())
@@ -282,7 +296,13 @@ fn cors_layer() -> CorsLayer {
             Method::PATCH,
             Method::DELETE,
         ])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::ACCEPT,
+            header::HeaderName::from_static("x-requested-with"),
+        ])
+        .allow_credentials(true)
 }
 
 #[utoipa::path(
@@ -308,6 +328,21 @@ mod tests {
     };
     use sqlx::mysql::MySqlPoolOptions;
     use tower::ServiceExt;
+
+    fn test_state() -> AppState {
+        AppState {
+            pool: MySqlPoolOptions::new()
+                .connect_lazy("mysql://root:password@127.0.0.1/test")
+                .expect("lazy pool"),
+            jwt_secret: extract_secret("test-secret".into()),
+            jwt_issuer: extract_secret("slims-api".into()),
+            jwt_audience: extract_secret("slims-admin".into()),
+            access_token_ttl: std::time::Duration::from_secs(600),
+            refresh_session_ttl: std::time::Duration::from_secs(43_200),
+            refresh_remember_ttl: std::time::Duration::from_secs(2_592_000),
+            cookie_secure: false,
+        }
+    }
 
     #[test]
     fn openapi_marks_catalog_as_public_and_keeps_biblios_protected() {
@@ -344,14 +379,7 @@ mod tests {
 
     #[tokio::test]
     async fn protected_admin_endpoints_reject_missing_token() {
-        let pool = MySqlPoolOptions::new()
-            .connect_lazy("mysql://root:password@127.0.0.1/test")
-            .expect("lazy pool");
-        let state = AppState {
-            pool,
-            jwt_secret: extract_secret("test-secret".into()),
-        };
-        let app = build_router(state);
+        let app = build_router(test_state());
 
         for path in ["/auth/me", "/dashboard"] {
             let response = app
@@ -360,6 +388,26 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn cookie_auth_endpoints_require_csrf_header() {
+        let app = build_router(test_state());
+
+        for path in ["/auth/refresh", "/auth/logout"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(path)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
         }
     }
 }

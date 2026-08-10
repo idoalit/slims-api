@@ -7,12 +7,16 @@ edition = "2024"
 bcrypt = "0.15"
 anyhow = "1"
 axum = { version = "0.7", features = ["macros"] }
+base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 jsonwebtoken = "9"
+rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "mysql", "chrono", "uuid"] }
+sha2 = "0.10"
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "mysql", "chrono", "uuid", "migrate"] }
+subtle = "2"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 tower-http = { version = "0.5", features = ["cors", "trace"] }

@@ -10,7 +10,10 @@ Requirements
 Configuration
 - Copy `.env` and set:
   - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
-  - `JWT_SECRET`
+  - `JWT_SECRET` (required, at least 32 random bytes)
+  - `JWT_ISSUER`, `JWT_AUDIENCE`
+  - `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_SESSION_TTL_SECONDS`, `REFRESH_REMEMBER_TTL_SECONDS`
+  - `COOKIE_SECURE` (`true` in production; `false` only for local HTTP)
   - `CORS_ALLOWED_ORIGINS` (comma-separated; set to the exact frontend origins)
   - `BIND_ADDR` (default `0.0.0.0:3000`)
 - The app builds a MySQL URL from those vars if `DATABASE_URL` is not provided.
@@ -27,7 +30,9 @@ cargo run --bin mcp_stdio
 ```
 
 API Overview (high level)
-- `POST /auth/login` — returns JWT.
+- `POST /auth/login` — returns a short-lived access JWT and sets a rotating HttpOnly refresh cookie.
+- `POST /auth/refresh` — rotates the refresh session and returns a new access JWT; requires `X-Requested-With: XMLHttpRequest`.
+- `POST /auth/logout` — revokes the refresh-token family and clears its cookie.
 - `GET /auth/me` — validates a bearer token and returns the current user's role, module permissions, and expiry.
 - `GET /dashboard?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&group_by=day|week|month` — permission-aware repository analytics.
 - `GET /health`
@@ -87,6 +92,7 @@ Search
 Database
 - Schema dump: `slims.sql`.
 - Uses MySQL via SQLx (runtime tokio + rustls).
+- Embedded SQLx migrations run at API startup. Production database credentials must be permitted to apply pending migrations, or migrations must be applied by the deployment pipeline before startup.
 
 MCP (Model Context Protocol) Support
 --------------------------------------

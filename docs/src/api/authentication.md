@@ -1,94 +1,63 @@
 # Authentication
 
-The SLIMS REST API uses JSON Web Tokens (JWTs) for authenticating requests. This section explains how to obtain an authentication token and how to use it to access protected API endpoints.
+The SLiMS API uses short-lived HS256 access JWTs and rotating opaque refresh sessions.
 
-## Endpoints Without Authentication
+## Browser flow
 
-The following endpoints are intentionally public and must be called without first logging in:
+1. `POST /auth/login` verifies the credentials, returns an access token, and sets a refresh cookie.
+2. Keep the access token in application memory only and send it as `Authorization: Bearer <token>`.
+3. When the access token expires, call `POST /auth/refresh`. The API rotates the refresh token and returns a new access token.
+4. Call `POST /auth/logout` to revoke the complete refresh-token family.
 
-* `GET /health`
-* `POST /auth/login`
-* `GET /catalog/biblios`
-* `GET /catalog/biblios/search?q={keyword}`
-* `GET /catalog/biblios/{biblio_id}`
+The refresh cookie is `HttpOnly`, `SameSite=Strict`, scoped to `/`, and uses the `Secure` flag when `COOKIE_SECURE=true`. Persistent remember-me cookies use the configured refresh lifetime; ordinary sessions receive a browser-session cookie with a shorter server-side expiry.
 
-The public catalog applies OPAC visibility and data-exposure rules. The protected `/biblios` endpoints remain available for staff and continue to require a JWT with the appropriate Bibliography module permission.
-
-## JSON Web Tokens (JWT)
-
-JWTs are an open, industry-standard RFC 7519 method for representing claims securely between two parties. The API issues JWTs upon successful login, and these tokens are then used by clients to prove their identity for subsequent requests.
-
-A JWT consists of three parts separated by dots, which are:
-*   **Header:** Contains the token type (JWT) and the signing algorithm (e.g., HMAC SHA256 or RSA).
-*   **Payload:** Contains the claims (statements about an entity, typically the user, and additional data).
-*   **Signature:** Used to verify that the sender of the JWT is who it says it is and that the message hasn't been changed along the way.
-
-## Obtaining an Authentication Token
-
-To obtain a JWT, you will typically send a `POST` request to a login endpoint with user credentials. The API will verify these credentials and, if valid, respond with a JWT.
-
-**Endpoint:** `POST /login` (Hypothetical, you'll need to confirm the actual login endpoint from the codebase)
-
-**Request Example (JSON:API compliant):**
+`POST /auth/refresh` and `POST /auth/logout` require this header as an additional CSRF control:
 
 ```http
-POST /login HTTP/1.1
-Host: localhost:8000
-Content-Type: application/vnd.api+json
+X-Requested-With: XMLHttpRequest
+```
+
+Serve the UI and API behind the same HTTPS origin in production. Cross-origin browser deployments must use an exact CORS allowlist and credentials-enabled requests.
+
+## Login
+
+```http
+POST /auth/login HTTP/1.1
+Content-Type: application/json
 
 {
-  "data": {
-    "type": "users",
-    "attributes": {
-      "username": "your_username",
-      "password": "your_password"
-    }
-  }
+  "username": "librarian",
+  "password": "secret",
+  "remember_me": true
 }
 ```
 
-**Response Example (JSON:API compliant):**
+The response contains a short-lived access token. Authentication responses use `Cache-Control: no-store`.
 
-If successful, the API will return a JWT. This JWT is typically returned in the `meta` object or as a `token` attribute within a `user` resource.
+## Access-token validation
 
-```http
-HTTP/1.1 200 OK
-Content-Type: application/vnd.api+json
+Access tokens require and validate `sub`, `exp`, `nbf`, `iss`, and `aud`. They also contain `iat` and a random `jti`. The API accepts only HS256 signed with `JWT_SECRET`.
 
-{
-  "data": {
-    "type": "users",
-    "id": "some_user_id",
-    "attributes": {
-      "username": "your_username",
-      "email": "user@example.com"
-      // ... other user attributes
-    }
-  },
-  "meta": {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-  }
-}
-```
-*Note: The exact structure of the login endpoint and the JWT return might vary. Please consult the API's implementation in `src/auth.rs` and related files for precise details.*
+## Refresh-token security
 
-## Using the Authentication Token
+- Refresh validators are generated using the operating system CSPRNG.
+- Only SHA-256 validator hashes are stored in MySQL.
+- Tokens rotate on every refresh and old-token reuse revokes the entire family.
+- A two-second concurrency grace avoids false replay detection from simultaneous browser tabs; it does not return a token for the old session.
+- Logout revokes the complete family rather than only deleting the browser cookie.
 
-Once you have obtained a JWT, you must include it in the `Authorization` header of all subsequent requests to protected endpoints. The token should be prefixed with the `Bearer` scheme.
+## Login abuse protection
 
-**Request Example with JWT:**
+Failed logins are tracked using a SHA-256 hash of the normalized username. Five failures inside fifteen minutes lock that login key for fifteen minutes. Put an additional IP-aware rate limit at the trusted reverse proxy or API gateway because the application cannot safely infer client IP without deployment-specific trusted-proxy configuration.
 
-```http
-GET /api/v1/members HTTP/1.1
-Host: localhost:8000
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
-Content-Type: application/vnd.api+json
-```
+## Public endpoints
 
-## Token Expiration
+These endpoints do not require a bearer token:
 
-JWTs are typically set to expire after a certain period for security reasons. If your token expires, you will receive an authentication error (e.g., HTTP 401 Unauthorized). You will then need to obtain a new token by re-authenticating (logging in again).
-
-## JWT Secret
-
-The `JWT_SECRET` environment variable (configured in your `.env` file) is critical for the security of your JWTs. This secret is used to sign and verify tokens. **It must be kept confidential and should never be exposed in client-side code or public repositories.**
+- `GET /health`
+- `POST /auth/login`
+- `POST /auth/refresh` (requires the refresh cookie)
+- `POST /auth/logout`
+- `GET /catalog/biblios`
+- `GET /catalog/biblios/search?q={keyword}`
+- `GET /catalog/biblios/{biblio_id}`

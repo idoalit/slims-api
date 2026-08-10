@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use thiserror::Error;
@@ -18,6 +18,10 @@ pub enum AppError {
     NotFound,
     #[error("bad request: {0}")]
     BadRequest(String),
+    #[error("too many requests: {0}")]
+    TooManyRequests(String),
+    #[error("conflict: {0}")]
+    Conflict(String),
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
     #[error("internal error: {0}")]
@@ -34,26 +38,28 @@ impl IntoResponse for AppError {
                 "Unauthorized",
                 Some(message.clone()),
             ),
-            AppError::Forbidden(message) => (
-                StatusCode::FORBIDDEN,
-                "Forbidden",
-                Some(message.clone()),
-            ),
+            AppError::Forbidden(message) => {
+                (StatusCode::FORBIDDEN, "Forbidden", Some(message.clone()))
+            }
             AppError::NotFound => (StatusCode::NOT_FOUND, "Not Found", Some("not found".into())),
             AppError::BadRequest(message) => (
                 StatusCode::BAD_REQUEST,
                 "Bad Request",
                 Some(message.clone()),
             ),
+            AppError::TooManyRequests(message) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too Many Requests",
+                Some(message.clone()),
+            ),
+            AppError::Conflict(message) => {
+                (StatusCode::CONFLICT, "Conflict", Some(message.clone()))
+            }
             AppError::Database(err) => {
                 if let sqlx::Error::RowNotFound = err {
                     (StatusCode::NOT_FOUND, "Not Found", Some("not found".into()))
                 } else {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Database Error",
-                        None,
-                    )
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Database Error", None)
                 }
             }
             AppError::Jwt(_) => (
@@ -61,11 +67,7 @@ impl IntoResponse for AppError {
                 "Invalid Token",
                 Some("invalid token".into()),
             ),
-            AppError::Internal(_) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal Error",
-                None,
-            ),
+            AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Internal Error", None),
         };
 
         let error = JsonApiError {
@@ -74,7 +76,19 @@ impl IntoResponse for AppError {
             detail,
         };
 
-        let body = Json(JsonApiErrorDocument { errors: vec![error] });
-        (status, body).into_response()
+        let body = Json(JsonApiErrorDocument {
+            errors: vec![error],
+        });
+        let mut response = (status, body).into_response();
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store, max-age=0"),
+        );
+        if matches!(self, AppError::TooManyRequests(_)) {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("900"));
+        }
+        response
     }
 }
