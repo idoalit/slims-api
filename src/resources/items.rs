@@ -52,6 +52,7 @@ pub struct CreateItem {
 pub struct BiblioSummary {
     pub biblio_id: i64,
     pub title: String,
+    pub call_number: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
@@ -210,7 +211,7 @@ async fn list_items(
                 if let Some(existing) = biblio_cache.get(&biblio_id) {
                     biblio = Some(existing.clone());
                 } else if let Some(row) = sqlx::query_as::<_, BiblioSummary>(
-                    "SELECT biblio_id, title FROM biblio WHERE biblio_id = ?",
+                    "SELECT biblio_id, title, call_number FROM biblio WHERE biblio_id = ?",
                 )
                 .bind(biblio_id)
                 .fetch_optional(&state.pool)
@@ -347,7 +348,7 @@ async fn get_item(
     if includes.contains("biblio") {
         if let Some(biblio_id) = item.biblio_id {
             biblio = sqlx::query_as::<_, BiblioSummary>(
-                "SELECT biblio_id, title FROM biblio WHERE biblio_id = ?",
+                "SELECT biblio_id, title, call_number FROM biblio WHERE biblio_id = ?",
             )
             .bind(biblio_id)
             .fetch_optional(&state.pool)
