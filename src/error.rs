@@ -76,6 +76,7 @@ impl IntoResponse for AppError {
                         Some("a resource with the same unique value already exists".into()),
                     )
                 } else {
+                    tracing::error!(error = ?err, "database request failed");
                     (StatusCode::INTERNAL_SERVER_ERROR, "Database Error", None)
                 }
             }
@@ -84,7 +85,10 @@ impl IntoResponse for AppError {
                 "Invalid Token",
                 Some("invalid token".into()),
             ),
-            AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Internal Error", None),
+            AppError::Internal(message) => {
+                tracing::error!(error = %message, "internal request failed");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal Error", None)
+            }
         };
 
         let error = JsonApiError {

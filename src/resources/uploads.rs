@@ -48,7 +48,7 @@ pub fn router() -> Router<AppState> {
     responses(
         (status = 200, description = "Sampul berhasil diunggah", body = JsonApiDocument),
         (status = 400, description = "Berkas tidak valid"),
-        (status = 503, description = "Object storage belum dikonfigurasi")
+        (status = 503, description = "Penyimpanan file dinonaktifkan")
     ),
     security(("bearerAuth" = [])),
     tag = "Uploads"
@@ -60,9 +60,9 @@ pub async fn upload_bibliography_cover(
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::Bibliography, Permission::Write)?;
     let storage = state
-        .object_storage
+        .file_storage
         .as_ref()
-        .ok_or_else(|| AppError::ServiceUnavailable("object storage belum dikonfigurasi".into()))?;
+        .ok_or_else(|| AppError::ServiceUnavailable("penyimpanan file dinonaktifkan".into()))?;
 
     let mut upload = None;
     while let Some(field) = multipart

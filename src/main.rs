@@ -22,6 +22,7 @@ use serde_json::json;
 use tokio::net::TcpListener;
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
+    services::ServeDir,
     trace::TraceLayer,
 };
 use tracing_subscriber::EnvFilter;
@@ -278,7 +279,7 @@ use crate::{
         (name = "Catalog", description = "Katalog bibliografi publik"),
         (name = "Contents", description = "Konten halaman"),
         (name = "Files", description = "Manajemen berkas"),
-        (name = "Uploads", description = "Unggah berkas ke object storage"),
+        (name = "Uploads", description = "Unggah dan simpan berkas"),
         (name = "Lookups", description = "Data referensi"),
         (name = "Visitors", description = "Kunjungan"),
         (name = "Settings", description = "Pengaturan"),
@@ -314,7 +315,7 @@ async fn main() -> anyhow::Result<()> {
     let config = AppConfig::from_env()?;
     let pool = init_pool(&config.database_url).await?;
     sqlx::migrate!().run(&pool).await?;
-    let object_storage = storage::ObjectStorage::from_env().await?;
+    let file_storage = storage::FileStorage::from_env().await?;
     let jwt_secret = extract_secret(config.jwt_secret);
     let state = AppState {
         pool,
@@ -325,7 +326,7 @@ async fn main() -> anyhow::Result<()> {
         refresh_session_ttl: config.refresh_session_ttl,
         refresh_remember_ttl: config.refresh_remember_ttl,
         cookie_secure: config.cookie_secure,
-        object_storage,
+        file_storage,
     };
 
     let app = build_router(state.clone());
@@ -340,6 +341,11 @@ async fn main() -> anyhow::Result<()> {
 
 fn build_router(state: AppState) -> Router {
     let cors = cors_layer();
+    let local_media_dir = state
+        .file_storage
+        .as_ref()
+        .and_then(storage::FileStorage::local_root)
+        .map(ToOwned::to_owned);
 
     let mcp_pool = state.pool.clone();
     let mcp_service = StreamableHttpService::new(
@@ -354,7 +360,7 @@ fn build_router(state: AppState) -> Router {
             mcp_auth_middleware,
         ));
 
-    Router::new()
+    let router = Router::new()
         .route("/health", get(health))
         .route("/auth/login", post(login))
         .route("/auth/refresh", post(refresh))
@@ -373,7 +379,15 @@ fn build_router(state: AppState) -> Router {
         .nest("/contents", resources::contents::router())
         .nest("/settings", resources::settings::router())
         .merge(mcp_protected)
-        .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()));
+
+    let router = if let Some(local_media_dir) = local_media_dir {
+        router.nest_service("/media", ServeDir::new(local_media_dir))
+    } else {
+        router
+    };
+
+    router
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state)
@@ -423,7 +437,7 @@ async fn health() -> Json<JsonApiDocument> {
 mod tests {
     use super::*;
     use axum::{
-        body::Body,
+        body::{Body, to_bytes},
         http::{Request, StatusCode},
     };
     use sqlx::mysql::MySqlPoolOptions;
@@ -441,7 +455,7 @@ mod tests {
             refresh_session_ttl: std::time::Duration::from_secs(43_200),
             refresh_remember_ttl: std::time::Duration::from_secs(2_592_000),
             cookie_secure: false,
-            object_storage: None,
+            file_storage: None,
         }
     }
 
@@ -531,6 +545,36 @@ mod tests {
                 .unwrap();
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
         }
+    }
+
+    #[tokio::test]
+    async fn local_media_route_serves_uploaded_files_without_authentication() {
+        let nonce = rand::random::<u64>();
+        let root = std::env::temp_dir().join(format!("slims-media-route-test-{nonce}"));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        tokio::fs::write(root.join("cover.txt"), b"local cover")
+            .await
+            .unwrap();
+
+        let mut state = test_state();
+        state.file_storage = Some(storage::FileStorage::local_for_test(
+            root.clone(),
+            "http://localhost:3000/media".into(),
+        ));
+        let response = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/media/cover.txt")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        assert_eq!(&body[..], b"local cover");
+        tokio::fs::remove_dir_all(root).await.unwrap();
     }
 
     #[tokio::test]

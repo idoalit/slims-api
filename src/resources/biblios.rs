@@ -1375,6 +1375,10 @@ async fn replace_biblio_links(
     Ok(())
 }
 
+fn normalized_frequency_id(frequency_id: Option<i32>) -> i32 {
+    frequency_id.unwrap_or(0)
+}
+
 #[utoipa::path(
     post,
     path = "/biblios",
@@ -1409,7 +1413,7 @@ async fn create_biblio(
     .bind(payload.content_type_id)
     .bind(payload.media_type_id)
     .bind(payload.carrier_type_id)
-    .bind(payload.frequency_id)
+    .bind(normalized_frequency_id(payload.frequency_id))
     .bind(payload.publish_place_id)
     .bind(&payload.classification)
     .bind(&payload.call_number)
@@ -1477,7 +1481,7 @@ async fn update_biblio(
     .bind(payload.content_type_id)
     .bind(payload.media_type_id)
     .bind(payload.carrier_type_id)
-    .bind(payload.frequency_id)
+    .bind(normalized_frequency_id(payload.frequency_id))
     .bind(payload.publish_place_id)
     .bind(&payload.classification)
     .bind(&payload.call_number)
@@ -1654,5 +1658,11 @@ mod tests {
         assert!(relation_query(CatalogVisibility::Public).contains("opac_hide"));
         assert!(!attachment_query(CatalogVisibility::Protected).contains("access_type = 'public'"));
         assert!(!relation_query(CatalogVisibility::Protected).contains("opac_hide"));
+    }
+
+    #[test]
+    fn empty_frequency_uses_slims_not_applicable_sentinel() {
+        assert_eq!(normalized_frequency_id(None), 0);
+        assert_eq!(normalized_frequency_id(Some(7)), 7);
     }
 }

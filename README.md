@@ -16,10 +16,13 @@ Configuration
   - `COOKIE_SECURE` (`true` in production; `false` only for local HTTP)
   - `CORS_ALLOWED_ORIGINS` (comma-separated; set to the exact frontend origins)
   - `BIND_ADDR` (default `0.0.0.0:3000`)
-  - `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT_URL`, `S3_PUBLIC_BASE_URL`, `S3_FORCE_PATH_STYLE`, dan `S3_PREFIX` untuk upload sampul ke S3/S3-compatible
+  - `STORAGE_DRIVER` (`local`, `s3`, atau `disabled`), `STORAGE_PREFIX`, dan `STORAGE_PUBLIC_BASE_URL` untuk memilih penyimpanan sampul
+  - Driver `local` memakai `STORAGE_LOCAL_DIR` (default `storage/uploads`) dan `API_PUBLIC_URL`; berkas dilayani API melalui `/media`
+  - Driver `s3` memakai `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT_URL`, `S3_PUBLIC_BASE_URL`, dan `S3_FORCE_PATH_STYLE`
   - Kredensial object storage mengikuti AWS SDK credential chain, termasuk `AWS_ACCESS_KEY_ID` dan `AWS_SECRET_ACCESS_KEY`
 - The app builds a MySQL URL from those vars if `DATABASE_URL` is not provided.
-- `S3_PUBLIC_BASE_URL` harus mengarah ke bucket/CDN yang dapat dibaca publik agar sampul dapat tampil di OPAC; API tidak mengubah ACL object.
+- Pada deployment container, mount `STORAGE_LOCAL_DIR` sebagai persistent volume agar upload driver `local` tidak hilang ketika container diganti. Isi `API_PUBLIC_URL` dengan origin API yang dapat diakses browser.
+- Untuk driver `s3`, URL publik harus mengarah ke bucket/CDN yang dapat dibaca publik agar sampul tampil di OPAC; API tidak mengubah ACL object.
 
 Run
 ```bash
