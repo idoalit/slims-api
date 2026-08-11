@@ -3,6 +3,7 @@ use axum::{
     extract::{Path, Query, State},
     routing::get,
 };
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use utoipa::ToSchema;
@@ -15,8 +16,18 @@ use crate::{
         JsonApiDocument, collection_document, pagination_meta, resource_with_fields,
         single_document,
     },
-    resources::ListParams,
+    resources::{
+        FilterField, FilterOperator, FilterValueType, ListParams, bind_filters_to_query,
+        bind_filters_to_scalar, where_clause,
+    },
 };
+
+const FILE_FILTERS: &[FilterField<'static>] = &[FilterField::new(
+    "search",
+    "CONCAT_WS(' ', file_title, file_name, mime_type)",
+    FilterOperator::Like,
+    FilterValueType::Text,
+)];
 
 #[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct FileObject {
@@ -29,8 +40,8 @@ pub struct FileObject {
     pub file_desc: Option<String>,
     pub file_key: Option<String>,
     pub uploader_id: i64,
-    pub input_date: String,
-    pub last_update: String,
+    pub input_date: NaiveDateTime,
+    pub last_update: NaiveDateTime,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
@@ -73,19 +84,23 @@ async fn list_files(
     let pagination = params.pagination();
     let includes = params.includes();
     let file_fields = params.fieldset("files");
+    let filters = params.filter_clauses(FILE_FILTERS)?;
+    let where_sql = where_clause(&filters);
     let (limit, offset, page, per_page) = pagination.limit_offset();
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
+    let count_sql = format!("SELECT COUNT(*) FROM files {where_sql}");
+    let total: i64 = bind_filters_to_scalar(sqlx::query_scalar(&count_sql), &filters)
         .fetch_one(&state.pool)
         .await?;
 
-    let files = sqlx::query_as::<_, FileObject>(
-        "SELECT file_id, file_title, file_name, file_url, file_dir, mime_type, file_desc, file_key, uploader_id, input_date, last_update FROM files ORDER BY file_id DESC LIMIT ? OFFSET ?",
-    )
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+    let data_sql = format!(
+        "SELECT file_id, file_title, file_name, file_url, file_dir, mime_type, file_desc, file_key, uploader_id, input_date, last_update FROM files {where_sql} ORDER BY file_id DESC LIMIT ? OFFSET ?"
+    );
+    let files = bind_filters_to_query(sqlx::query_as::<_, FileObject>(&data_sql), &filters)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     let mut data = Vec::with_capacity(files.len());
 
@@ -107,14 +122,7 @@ async fn list_files(
 
     let documents = data
         .into_iter()
-        .map(|file| {
-            resource_with_fields(
-                "files",
-                file.file.file_id.to_string(),
-                file,
-                file_fields,
-            )
-        })
+        .map(|file| resource_with_fields("files", file.file.file_id.to_string(), file, file_fields))
         .collect();
 
     Ok(Json(collection_document(

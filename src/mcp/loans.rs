@@ -7,7 +7,9 @@ use super::{LibraryMcpServer, types::*};
 impl LibraryMcpServer {
     /// Daftar peminjaman dengan filter opsional berdasarkan anggota,
     /// kode item, atau status pengembalian.
-    #[tool(description = "List loans with optional filters by member ID, item code, or active status")]
+    #[tool(
+        description = "List loans with optional filters by member ID, item code, or active status"
+    )]
     async fn library_loans_list(
         &self,
         Parameters(input): Parameters<ListLoansInput>,
@@ -51,18 +53,19 @@ impl LibraryMcpServer {
 
     /// Buat peminjaman baru (checkout buku). Pastikan item tersedia dan
     /// anggota masih aktif sebelum memanggil tool ini.
-    #[tool(description = "Create a new checkout transaction using item code and member ID. Due date is calculated from membership type when omitted.")]
+    #[tool(
+        description = "Create a new checkout transaction using item code and member ID. Due date is calculated from membership type when omitted."
+    )]
     async fn library_loans_checkout_create(
         &self,
         Parameters(input): Parameters<CheckoutInput>,
     ) -> Result<String, McpError> {
         let item_code = &input.item_code;
-        let item_exists: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM item WHERE item_code = ?")
-                .bind(item_code)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let item_exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM item WHERE item_code = ?")
+            .bind(item_code)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         if item_exists == 0 {
             return Err(McpError::invalid_params(
@@ -95,10 +98,7 @@ impl LibraryMcpServer {
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?
         .ok_or_else(|| {
-            McpError::invalid_params(
-                format!("Anggota '{}' tidak ditemukan", member_id),
-                None,
-            )
+            McpError::invalid_params(format!("Anggota '{}' tidak ditemukan", member_id), None)
         })?;
 
         if member.is_pending != 0 {

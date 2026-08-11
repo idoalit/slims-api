@@ -90,7 +90,9 @@ impl LibraryMcpServer {
 
     /// Ambil detail lengkap sebuah buku berdasarkan biblio_id, termasuk
     /// penulis, topik, dan daftar eksemplar yang tersedia.
-    #[tool(description = "Get full bibliographic details by biblio_id, including authors, topics, and item copies")]
+    #[tool(
+        description = "Get full bibliographic details by biblio_id, including authors, topics, and item copies"
+    )]
     async fn library_catalog_get_biblio_detail(
         &self,
         Parameters(input): Parameters<GetBookInput>,

@@ -7,7 +7,9 @@ use super::{LibraryMcpServer, types::*};
 impl LibraryMcpServer {
     /// Laporan sirkulasi peminjaman: ringkasan total, dikembalikan, aktif, terlambat,
     /// dan daftar N buku terpinjam terbanyak dalam rentang waktu tertentu.
-    #[tool(description = "Library circulation report: summary of total loans, returned, active, overdue, plus top N most borrowed titles within a date range")]
+    #[tool(
+        description = "Library circulation report: summary of total loans, returned, active, overdue, plus top N most borrowed titles within a date range"
+    )]
     async fn library_reports_circulation(
         &self,
         Parameters(input): Parameters<CirculationReportInput>,
@@ -15,7 +17,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
         let top_n = input.top_n.unwrap_or(10).min(50) as i64;
 
@@ -73,7 +79,9 @@ impl LibraryMcpServer {
 
     /// Laporan keterlambatan pengembalian buku: daftar peminjaman yang melewati
     /// tanggal jatuh tempo beserta estimasi denda.
-    #[tool(description = "Overdue loans report: list of active overdue loans with estimated fines within a selected due-date range. Optional filters by member ID or item location ID.")]
+    #[tool(
+        description = "Overdue loans report: list of active overdue loans with estimated fines within a selected due-date range. Optional filters by member ID or item location ID."
+    )]
     async fn library_reports_overdue_loans(
         &self,
         Parameters(input): Parameters<OverdueReportInput>,
@@ -81,7 +89,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
 
         let mut conds = vec![
@@ -132,7 +144,9 @@ impl LibraryMcpServer {
 
     /// Statistik koleksi perpustakaan: total bibliografi dan eksemplar,
     /// dikelompokkan berdasarkan GMD, lokasi, dan tipe koleksi.
-    #[tool(description = "Collection overview report for a selected date range: total bibliographic records and item copies, grouped by material type (GMD), location, and collection type")]
+    #[tool(
+        description = "Collection overview report for a selected date range: total bibliographic records and item copies, grouped by material type (GMD), location, and collection type"
+    )]
     async fn library_reports_collection_overview(
         &self,
         Parameters(input): Parameters<CollectionReportInput>,
@@ -140,7 +154,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
 
         let total_biblio: i64 = sqlx::query_scalar(
@@ -152,14 +170,13 @@ impl LibraryMcpServer {
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
-        let total_items: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM item WHERE DATE(input_date) BETWEEN ? AND ?",
-        )
-        .bind(&start)
-        .bind(&end)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let total_items: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM item WHERE DATE(input_date) BETWEEN ? AND ?")
+                .bind(&start)
+                .bind(&end)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         let by_gmd = sqlx::query_as::<_, CollectionByGmdRow>(
             "SELECT g.gmd_name, \
@@ -235,7 +252,9 @@ impl LibraryMcpServer {
 
     /// Statistik anggota perpustakaan: breakdown per tipe keanggotaan
     /// (aktif/pending/kedaluwarsa) dan 10 peminjam terbanyak.
-    #[tool(description = "Member overview report for a selected date range: member counts by type (active/pending/expired) and top 10 borrowers. Optional filter by membership type.")]
+    #[tool(
+        description = "Member overview report for a selected date range: member counts by type (active/pending/expired) and top 10 borrowers. Optional filter by membership type."
+    )]
     async fn library_reports_member_overview(
         &self,
         Parameters(input): Parameters<MemberReportInput>,
@@ -243,7 +262,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
 
         let mut conds = vec![
@@ -325,7 +348,9 @@ impl LibraryMcpServer {
 
     /// Laporan kunjungan perpustakaan dari tabel visitor_count.
     /// Detail dapat dikelompokkan per hari atau per bulan.
-    #[tool(description = "Visitor report: total visits, unique members, and breakdown by day or month. Filter by date range; group_by: \"day\" (default) or \"month\".")]
+    #[tool(
+        description = "Visitor report: total visits, unique members, and breakdown by day or month. Filter by date range; group_by: \"day\" (default) or \"month\"."
+    )]
     async fn library_reports_visitor_overview(
         &self,
         Parameters(input): Parameters<VisitorReportInput>,
@@ -333,7 +358,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
         let group_by = input.group_by.as_deref().unwrap_or("day").to_owned();
 
@@ -348,7 +377,11 @@ impl LibraryMcpServer {
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
-        let date_format = if group_by == "month" { "%Y-%m" } else { "%Y-%m-%d" };
+        let date_format = if group_by == "month" {
+            "%Y-%m"
+        } else {
+            "%Y-%m-%d"
+        };
         let detail_sql = format!(
             "SELECT DATE_FORMAT(checkin_date, '{fmt}') as visit_date, COUNT(*) as visitor_count \
              FROM visitor_count \
@@ -384,7 +417,9 @@ impl LibraryMcpServer {
 
     /// Laporan denda anggota: total debet, kredit, dan sisa denda yang
     /// belum dibayar per anggota. Default hanya menampilkan yang memiliki tunggakan.
-    #[tool(description = "Fines report for a selected date range: total debit, credit, and outstanding balance per member. Optional filter by member ID; outstanding_only (default: true) shows unpaid balances only.")]
+    #[tool(
+        description = "Fines report for a selected date range: total debit, credit, and outstanding balance per member. Optional filter by member ID; outstanding_only (default: true) shows unpaid balances only."
+    )]
     async fn library_reports_fines_overview(
         &self,
         Parameters(input): Parameters<FinesReportInput>,
@@ -392,7 +427,11 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
         let outstanding_only = input.outstanding_only.unwrap_or(true);
 
@@ -401,7 +440,11 @@ impl LibraryMcpServer {
             where_conds.push("f.member_id = ?".to_string());
         }
         let where_clause = format!("WHERE {}", where_conds.join(" AND "));
-        let having = if outstanding_only { "HAVING outstanding > 0" } else { "" };
+        let having = if outstanding_only {
+            "HAVING outstanding > 0"
+        } else {
+            ""
+        };
 
         let sql = format!(
             "SELECT f.member_id, m.member_name, \
@@ -436,7 +479,9 @@ impl LibraryMcpServer {
     /// Laporan pertambahan koleksi: jumlah bibliografi dan eksemplar baru
     /// yang diinput dalam rentang tanggal tertentu, dengan breakdown per GMD
     /// dan lokasi, serta daftar judul-judul baru.
-    #[tool(description = "Collection growth report for a selected date range: total new bibliographic records and item copies, grouped by material type (GMD) and location, plus a list of newly added titles. Filter using start_date and end_date (YYYY-MM-DD).")]
+    #[tool(
+        description = "Collection growth report for a selected date range: total new bibliographic records and item copies, grouped by material type (GMD) and location, plus a list of newly added titles. Filter using start_date and end_date (YYYY-MM-DD)."
+    )]
     async fn library_reports_collection_growth(
         &self,
         Parameters(input): Parameters<NewCollectionReportInput>,
@@ -444,18 +489,23 @@ impl LibraryMcpServer {
         let today = chrono::Utc::now().date_naive();
         let default_start = (today - chrono::Duration::days(30)).to_string();
         let default_end = today.to_string();
-        let start = input.start_date.as_deref().unwrap_or(&default_start).to_owned();
+        let start = input
+            .start_date
+            .as_deref()
+            .unwrap_or(&default_start)
+            .to_owned();
         let end = input.end_date.as_deref().unwrap_or(&default_end).to_owned();
         let limit = input.limit.unwrap_or(20).min(100) as i64;
 
         // Ringkasan: jumlah rekor bibliografi baru dan eksemplar baru dalam periode
-        let new_biblio_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM biblio WHERE DATE(input_date) BETWEEN ? AND ?")
-                .bind(&start)
-                .bind(&end)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let new_biblio_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM biblio WHERE DATE(input_date) BETWEEN ? AND ?",
+        )
+        .bind(&start)
+        .bind(&end)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         let new_items_count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM item WHERE DATE(input_date) BETWEEN ? AND ?")

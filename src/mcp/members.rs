@@ -52,7 +52,9 @@ impl LibraryMcpServer {
     }
 
     /// Ambil detail anggota termasuk tipe keanggotaan dan batas pinjam.
-    #[tool(description = "Get member details including membership type, loan limits, and active loan count")]
+    #[tool(
+        description = "Get member details including membership type, loan limits, and active loan count"
+    )]
     async fn library_members_get_detail(
         &self,
         Parameters(input): Parameters<GetMemberInput>,

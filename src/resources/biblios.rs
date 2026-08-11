@@ -71,6 +71,14 @@ pub struct BiblioTopicInput {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct BiblioAttachmentInput {
+    pub file_id: i64,
+    pub placement: Option<String>,
+    pub access_type: String,
+    pub access_limit: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpsertBiblio {
     pub title: String,
     pub sor: Option<String>,
@@ -103,6 +111,7 @@ pub struct UpsertBiblio {
     pub topics: Option<Vec<BiblioTopicInput>>,
     /// Legacy input. New clients should send `topics` with a subject level.
     pub topic_ids: Option<Vec<i64>>,
+    pub attachments: Option<Vec<BiblioAttachmentInput>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
@@ -199,6 +208,7 @@ pub struct AttachmentInfo {
     pub file_url: Option<String>,
     pub file_dir: Option<String>,
     pub mime_type: Option<String>,
+    pub file_desc: Option<String>,
     pub placement: Option<String>,
     pub access_type: String,
     pub access_limit: Option<String>,
@@ -787,10 +797,10 @@ async fn enrich_biblios(
 fn attachment_query(visibility: CatalogVisibility) -> &'static str {
     match visibility {
         CatalogVisibility::Protected => {
-            "SELECT f.file_id, f.file_title, f.file_name, f.file_url, f.file_dir, f.mime_type, ba.placement, ba.access_type, ba.access_limit FROM biblio_attachment ba JOIN files f ON f.file_id = ba.file_id WHERE ba.biblio_id = ? ORDER BY ba.file_id DESC"
+            "SELECT f.file_id, f.file_title, f.file_name, f.file_url, f.file_dir, f.mime_type, f.file_desc, ba.placement, ba.access_type, ba.access_limit FROM biblio_attachment ba JOIN files f ON f.file_id = ba.file_id WHERE ba.biblio_id = ? ORDER BY ba.file_id DESC"
         }
         CatalogVisibility::Public => {
-            "SELECT f.file_id, f.file_title, f.file_name, f.file_url, f.file_dir, f.mime_type, ba.placement, ba.access_type, ba.access_limit FROM biblio_attachment ba JOIN files f ON f.file_id = ba.file_id WHERE ba.biblio_id = ? AND ba.access_type = 'public' ORDER BY ba.file_id DESC"
+            "SELECT f.file_id, f.file_title, f.file_name, f.file_url, f.file_dir, f.mime_type, f.file_desc, ba.placement, ba.access_type, ba.access_limit FROM biblio_attachment ba JOIN files f ON f.file_id = ba.file_id WHERE ba.biblio_id = ? AND ba.access_type = 'public' ORDER BY ba.file_id DESC"
         }
     }
 }
@@ -1365,6 +1375,7 @@ async fn replace_biblio_links(
     author_ids: &Option<Vec<i64>>,
     topics: &Option<Vec<BiblioTopicInput>>,
     topic_ids: &Option<Vec<i64>>,
+    attachments: &Option<Vec<BiblioAttachmentInput>>,
 ) -> Result<(), AppError> {
     let author_links = authors
         .as_ref()
@@ -1458,6 +1469,53 @@ async fn replace_biblio_links(
         }
     }
 
+    if let Some(attachments) = attachments {
+        let mut attachment_links = HashMap::new();
+        for attachment in attachments {
+            if !matches!(attachment.access_type.as_str(), "public" | "private") {
+                return Err(AppError::BadRequest(format!(
+                    "access_type {} tidak valid",
+                    attachment.access_type
+                )));
+            }
+            if !matches!(
+                attachment.placement.as_deref(),
+                None | Some("link" | "popup" | "embed")
+            ) {
+                return Err(AppError::BadRequest(format!(
+                    "placement {} tidak valid",
+                    attachment.placement.as_deref().unwrap_or_default()
+                )));
+            }
+            let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files WHERE file_id = ?")
+                .bind(attachment.file_id)
+                .fetch_one(&state.pool)
+                .await?;
+            if exists == 0 {
+                return Err(AppError::BadRequest(format!(
+                    "file_id {} tidak ditemukan",
+                    attachment.file_id
+                )));
+            }
+            attachment_links.insert(attachment.file_id, attachment);
+        }
+
+        sqlx::query("DELETE FROM biblio_attachment WHERE biblio_id = ?")
+            .bind(biblio_id)
+            .execute(&state.pool)
+            .await?;
+        for attachment in attachment_links.into_values() {
+            sqlx::query("INSERT INTO biblio_attachment (biblio_id, file_id, placement, access_type, access_limit) VALUES (?, ?, ?, ?, ?)")
+                .bind(biblio_id)
+                .bind(attachment.file_id)
+                .bind(&attachment.placement)
+                .bind(&attachment.access_type)
+                .bind(&attachment.access_limit)
+                .execute(&state.pool)
+                .await?;
+        }
+    }
+
     Ok(())
 }
 
@@ -1523,6 +1581,7 @@ async fn create_biblio(
         &payload.author_ids,
         &payload.topics,
         &payload.topic_ids,
+        &payload.attachments,
     )
     .await?;
 
@@ -1602,6 +1661,7 @@ async fn update_biblio(
         &payload.author_ids,
         &payload.topics,
         &payload.topic_ids,
+        &payload.attachments,
     )
     .await?;
 

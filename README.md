@@ -16,7 +16,7 @@ Configuration
   - `COOKIE_SECURE` (`true` in production; `false` only for local HTTP)
   - `CORS_ALLOWED_ORIGINS` (comma-separated; set to the exact frontend origins)
   - `BIND_ADDR` (default `0.0.0.0:3000`)
-  - `STORAGE_DRIVER` (`local`, `s3`, atau `disabled`), `STORAGE_PREFIX`, dan `STORAGE_PUBLIC_BASE_URL` untuk memilih penyimpanan sampul
+  - `STORAGE_DRIVER` (`local`, `s3`, atau `disabled`), `STORAGE_PREFIX`, dan `STORAGE_PUBLIC_BASE_URL` untuk memilih penyimpanan sampul dan lampiran bibliografi
   - Driver `local` memakai `STORAGE_LOCAL_DIR` (default `storage/uploads`) dan `API_PUBLIC_URL`; berkas dilayani API melalui `/media`
   - Driver `s3` memakai `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT_URL`, `S3_PUBLIC_BASE_URL`, dan `S3_FORCE_PATH_STYLE`
   - Kredensial object storage mengikuti AWS SDK credential chain, termasuk `AWS_ACCESS_KEY_ID` dan `AWS_SECRET_ACCESS_KEY`
@@ -52,6 +52,7 @@ API Overview (high level)
 - `GET /contents` — paginated list of CMS contents and by ID or path.
 - `GET /files` — paginated list of uploaded files, optional `include=biblios`.
 - `POST /uploads/bibliography-covers` — multipart upload sampul (field `file`, JPEG/PNG/WebP/GIF, maksimal 5 MB) ke object storage.
+- `POST /uploads/bibliography-attachments` — multipart upload satu lampiran (field `file`, `title`, dan `description`; maksimal 128 MB) ke storage dan tabel `files`. UI dapat memanggilnya berulang untuk multiple upload, lalu mengirim `file_id` pada relasi `attachments` bibliografi.
 - `GET /visitors` — visitor log, paginated.
 - `GET /settings` — list settings or fetch a key; supports nested paths via dot notation.
 - `/lookups/*` — paginated lookup lists plus `GET /{id}`, `POST`, `PUT /{id}`, and `DELETE /{id}` for member types, collection types, locations, topics, content/media/carrier types, and other reference data.

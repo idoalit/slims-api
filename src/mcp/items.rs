@@ -7,7 +7,9 @@ use super::{LibraryMcpServer, types::*};
 impl LibraryMcpServer {
     /// Daftar eksemplar fisik di perpustakaan dengan filter opsional
     /// berdasarkan bibliografi, lokasi, atau ketersediaan.
-    #[tool(description = "List physical item copies with optional filters by bibliography, location, or availability")]
+    #[tool(
+        description = "List physical item copies with optional filters by bibliography, location, or availability"
+    )]
     async fn library_items_list(
         &self,
         Parameters(input): Parameters<ListItemsInput>,
@@ -75,12 +77,13 @@ impl LibraryMcpServer {
             };
 
             let is_available = if let Some(ref code) = item.item_code {
-                let on_loan: i64 =
-                    sqlx::query_scalar("SELECT COUNT(*) FROM loan WHERE item_code = ? AND is_return = 0")
-                        .bind(code)
-                        .fetch_one(&self.pool)
-                        .await
-                        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                let on_loan: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM loan WHERE item_code = ? AND is_return = 0",
+                )
+                .bind(code)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
                 on_loan == 0
             } else {
                 false

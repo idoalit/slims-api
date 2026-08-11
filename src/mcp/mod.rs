@@ -32,7 +32,10 @@ impl LibraryMcpServer {
         router.merge(Self::lookups_tool_router());
         router.merge(Self::reports_tool_router());
         router.merge(Self::stats_tool_router());
-        Self { pool, tool_router: router }
+        Self {
+            pool,
+            tool_router: router,
+        }
     }
 }
 

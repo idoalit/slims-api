@@ -18,8 +18,8 @@ use crate::{
         single_document,
     },
     resources::{
-        bind_filters_to_query, bind_filters_to_scalar, where_clause, FilterField, FilterOperator,
-        FilterValueType, ListParams, SortField,
+        FilterField, FilterOperator, FilterValueType, ListParams, SortField, bind_filters_to_query,
+        bind_filters_to_scalar, where_clause,
     },
 };
 
