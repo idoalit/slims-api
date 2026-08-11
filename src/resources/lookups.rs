@@ -104,6 +104,18 @@ pub struct Author {
 }
 
 #[derive(Debug, Serialize, FromRow, ToSchema)]
+pub struct AuthorityType {
+    pub authority_type_id: String,
+    pub authority_type_name: String,
+}
+
+#[derive(Debug, Serialize, FromRow, ToSchema)]
+pub struct AuthorityLevel {
+    pub authority_level_id: u8,
+    pub authority_level_name: String,
+}
+
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Supplier {
     pub supplier_id: i64,
     pub supplier_name: String,
@@ -229,8 +241,15 @@ lookup_payload!(UpsertPublisher {
 lookup_payload!(UpsertAuthor {
     author_name: String,
     author_year: Option<String>,
-    authority_type: Option<String>,
+    authority_type: String,
     auth_list: Option<String>,
+});
+lookup_payload!(UpsertAuthorityType {
+    authority_type_id: String,
+    authority_type_name: String,
+});
+lookup_payload!(UpsertAuthorityLevel {
+    authority_level_name: String,
 });
 lookup_payload!(UpsertSupplier {
     supplier_name: String,
@@ -600,6 +619,26 @@ pub fn router() -> Router<AppState> {
             "/authors/:id",
             get(get_author).put(update_author).delete(delete_author),
         )
+        .route(
+            "/authority-types",
+            get(authority_types).post(create_authority_type),
+        )
+        .route(
+            "/authority-types/:id",
+            get(get_authority_type)
+                .put(update_authority_type)
+                .delete(delete_authority_type),
+        )
+        .route(
+            "/authority-levels",
+            get(authority_levels).post(create_authority_level),
+        )
+        .route(
+            "/authority-levels/:id",
+            get(get_authority_level)
+                .put(update_authority_level)
+                .delete(delete_authority_level),
+        )
         .route("/suppliers", get(suppliers).post(create_supplier))
         .route(
             "/suppliers/:id",
@@ -882,21 +921,114 @@ numeric_lookup_crud!(
     ]
 );
 
+async fn ensure_authority_type(state: &AppState, id: &str) -> Result<(), AppError> {
+    let exists: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM mst_authority_type WHERE authority_type_id = ?")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
+    if exists == 0 {
+        return Err(AppError::BadRequest(format!(
+            "authority_type {id} tidak ditemukan"
+        )));
+    }
+    Ok(())
+}
+
+#[utoipa::path(get, path = "/lookups/authors/{id}", params(("id" = String, Path, description = "Resource ID")), responses((status = 200, body = JsonApiDocument)), security(("bearerAuth" = [])), tag = "Lookups")]
+async fn get_author(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
+    Ok(Json(lookup_by_id::<Author>(&state, "SELECT author_id, author_name, author_year, authority_type, auth_list FROM mst_author WHERE author_id = ?", &id, "authors").await?))
+}
+
+#[utoipa::path(post, path = "/lookups/authors", request_body = UpsertAuthor, responses((status = 200, body = JsonApiDocument)), security(("bearerAuth" = [])), tag = "Lookups")]
+async fn create_author(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(payload): Json<UpsertAuthor>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Write)?;
+    ensure_authority_type(&state, &payload.authority_type).await?;
+    let result = sqlx::query("INSERT INTO mst_author (author_name, author_year, authority_type, auth_list, input_date, last_update) VALUES (?, ?, ?, ?, CURDATE(), CURDATE())")
+        .bind(&payload.author_name)
+        .bind(&payload.author_year)
+        .bind(&payload.authority_type)
+        .bind(&payload.auth_list)
+        .execute(&state.pool)
+        .await?;
+    let id = result.last_insert_id().to_string();
+    Ok(Json(lookup_by_id::<Author>(&state, "SELECT author_id, author_name, author_year, authority_type, auth_list FROM mst_author WHERE author_id = ?", &id, "authors").await?))
+}
+
+#[utoipa::path(put, path = "/lookups/authors/{id}", request_body = UpsertAuthor, params(("id" = String, Path, description = "Resource ID")), responses((status = 200, body = JsonApiDocument)), security(("bearerAuth" = [])), tag = "Lookups")]
+async fn update_author(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+    Json(payload): Json<UpsertAuthor>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Write)?;
+    ensure_authority_type(&state, &payload.authority_type).await?;
+    lookup_by_id::<Author>(&state, "SELECT author_id, author_name, author_year, authority_type, auth_list FROM mst_author WHERE author_id = ?", &id, "authors").await?;
+    sqlx::query("UPDATE mst_author SET author_name = ?, author_year = ?, authority_type = ?, auth_list = ?, last_update = CURDATE() WHERE author_id = ?")
+        .bind(&payload.author_name)
+        .bind(&payload.author_year)
+        .bind(&payload.authority_type)
+        .bind(&payload.auth_list)
+        .bind(&id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(lookup_by_id::<Author>(&state, "SELECT author_id, author_name, author_year, authority_type, auth_list FROM mst_author WHERE author_id = ?", &id, "authors").await?))
+}
+
+#[utoipa::path(delete, path = "/lookups/authors/{id}", params(("id" = String, Path, description = "Resource ID")), responses((status = 204, description = "Resource deleted")), security(("bearerAuth" = [])), tag = "Lookups")]
+async fn delete_author(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+) -> Result<StatusCode, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Write)?;
+    remove_lookup(&state, "DELETE FROM mst_author WHERE author_id = ?", &id).await
+}
+
+string_lookup_crud!(
+    get_authority_type,
+    create_authority_type,
+    update_authority_type,
+    delete_authority_type,
+    "/lookups/authority-types",
+    "/lookups/authority-types/{id}",
+    "authority-types",
+    AuthorityType,
+    UpsertAuthorityType,
+    authority_type_id,
+    "SELECT authority_type_id, authority_type_name FROM mst_authority_type WHERE authority_type_id = ?",
+    "INSERT INTO mst_authority_type (authority_type_id, authority_type_name, input_date, last_update) VALUES (?, ?, CURDATE(), CURDATE())",
+    "UPDATE mst_authority_type SET authority_type_id = ?, authority_type_name = ?, last_update = CURDATE() WHERE authority_type_id = ?",
+    "DELETE FROM mst_authority_type WHERE authority_type_id = ?",
+    [authority_type_id, authority_type_name],
+    [authority_type_id, authority_type_name]
+);
+
 numeric_lookup_crud!(
-    get_author,
-    create_author,
-    update_author,
-    delete_author,
-    "/lookups/authors",
-    "/lookups/authors/{id}",
-    "authors",
-    Author,
-    UpsertAuthor,
-    "SELECT author_id, author_name, author_year, authority_type, auth_list FROM mst_author WHERE author_id = ?",
-    "INSERT INTO mst_author (author_name, author_year, authority_type, auth_list, input_date, last_update) VALUES (?, ?, ?, ?, CURDATE(), CURDATE())",
-    "UPDATE mst_author SET author_name = ?, author_year = ?, authority_type = ?, auth_list = ?, last_update = CURDATE() WHERE author_id = ?",
-    "DELETE FROM mst_author WHERE author_id = ?",
-    [author_name, author_year, authority_type, auth_list]
+    get_authority_level,
+    create_authority_level,
+    update_authority_level,
+    delete_authority_level,
+    "/lookups/authority-levels",
+    "/lookups/authority-levels/{id}",
+    "authority-levels",
+    AuthorityLevel,
+    UpsertAuthorityLevel,
+    "SELECT authority_level_id, authority_level_name FROM mst_authority_level WHERE authority_level_id = ?",
+    "INSERT INTO mst_authority_level (authority_level_name, input_date, last_update) VALUES (?, CURDATE(), CURDATE())",
+    "UPDATE mst_authority_level SET authority_level_name = ?, last_update = CURDATE() WHERE authority_level_id = ?",
+    "DELETE FROM mst_authority_level WHERE authority_level_id = ?",
+    [authority_level_name]
 );
 
 numeric_lookup_crud!(
@@ -1340,6 +1472,58 @@ async fn authors(
     .await?;
 
     Ok(Json(document))
+}
+
+#[utoipa::path(
+    get,
+    path = "/lookups/authority-types",
+    responses((status = 200, body = JsonApiDocument)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
+async fn authority_types(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(pagination): Query<Pagination>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
+    Ok(Json(
+        paged_lookup(
+            &state,
+            pagination,
+            "SELECT authority_type_id, authority_type_name FROM mst_authority_type ORDER BY authority_type_id LIMIT ? OFFSET ?",
+            "SELECT COUNT(*) FROM mst_authority_type",
+            "authority-types",
+            |row: &AuthorityType| row.authority_type_id.clone(),
+        )
+        .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/lookups/authority-levels",
+    responses((status = 200, body = JsonApiDocument)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
+async fn authority_levels(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(pagination): Query<Pagination>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
+    Ok(Json(
+        paged_lookup(
+            &state,
+            pagination,
+            "SELECT authority_level_id, authority_level_name FROM mst_authority_level ORDER BY authority_level_id LIMIT ? OFFSET ?",
+            "SELECT COUNT(*) FROM mst_authority_level",
+            "authority-levels",
+            |row: &AuthorityLevel| row.authority_level_id.to_string(),
+        )
+        .await?,
+    ))
 }
 
 #[utoipa::path(

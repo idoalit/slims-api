@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS `biblio_attachment` (
 CREATE TABLE IF NOT EXISTS `biblio_author` (
   `biblio_id` int(11) NOT NULL default '0',
   `author_id` int(11) NOT NULL default '0',
-  `level` int(1) NOT NULL default '1',
+  `level` tinyint unsigned NOT NULL default '1',
   PRIMARY KEY  (`biblio_id`,`author_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
@@ -447,7 +447,7 @@ CREATE TABLE IF NOT EXISTS `mst_author` (
   `author_id` int(11) NOT NULL auto_increment,
   `author_name` varchar(100) collate utf8_unicode_ci NOT NULL,
   `author_year` varchar(20) collate utf8_unicode_ci default NULL,
-  `authority_type` enum('p','o','c') collate utf8_unicode_ci default 'p',
+  `authority_type` char(1) collate utf8_unicode_ci NOT NULL default 'p',
   `auth_list` varchar(20) collate utf8_unicode_ci default NULL,
   `input_date` date NOT NULL,
   `last_update` date default NULL,
@@ -458,6 +458,41 @@ CREATE TABLE IF NOT EXISTS `mst_author` (
 --
 -- Dumping data for table `mst_author`
 --
+
+CREATE TABLE IF NOT EXISTS `mst_authority_type` (
+  `authority_type_id` char(1) collate utf8_unicode_ci NOT NULL,
+  `authority_type_name` varchar(50) collate utf8_unicode_ci NOT NULL,
+  `input_date` date NOT NULL,
+  `last_update` date default NULL,
+  PRIMARY KEY (`authority_type_id`),
+  UNIQUE KEY `authority_type_name` (`authority_type_name`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+INSERT INTO `mst_authority_type` VALUES
+('p', 'Nama perorangan', CURDATE(), CURDATE()),
+('o', 'Badan organisasi', CURDATE(), CURDATE()),
+('c', 'Konferensi', CURDATE(), CURDATE());
+
+CREATE TABLE IF NOT EXISTS `mst_authority_level` (
+  `authority_level_id` tinyint unsigned NOT NULL auto_increment,
+  `authority_level_name` varchar(50) collate utf8_unicode_ci NOT NULL,
+  `input_date` date NOT NULL,
+  `last_update` date default NULL,
+  PRIMARY KEY (`authority_level_id`),
+  UNIQUE KEY `authority_level_name` (`authority_level_name`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+INSERT INTO `mst_authority_level` VALUES
+(1, 'Pengarang utama', CURDATE(), CURDATE()),
+(2, 'Pengarang tambahan', CURDATE(), CURDATE()),
+(3, 'Editor', CURDATE(), CURDATE()),
+(4, 'Penerjemah', CURDATE(), CURDATE()),
+(5, 'Direktur', CURDATE(), CURDATE()),
+(6, 'Produser', CURDATE(), CURDATE()),
+(7, 'Komposer', CURDATE(), CURDATE()),
+(8, 'Ilustrator', CURDATE(), CURDATE()),
+(9, 'Kreator', CURDATE(), CURDATE()),
+(10, 'Kontributor', CURDATE(), CURDATE());
 
 
 -- --------------------------------------------------------

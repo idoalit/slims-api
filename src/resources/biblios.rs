@@ -59,6 +59,12 @@ pub struct Biblio {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct BiblioAuthorInput {
+    pub author_id: i64,
+    pub authority_level_id: u8,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpsertBiblio {
     pub title: String,
     pub sor: Option<String>,
@@ -85,6 +91,8 @@ pub struct UpsertBiblio {
     pub promoted: Option<i16>,
     pub labels: Option<String>,
     pub spec_detail_info: Option<String>,
+    pub authors: Option<Vec<BiblioAuthorInput>>,
+    /// Legacy input. New clients should send `authors` with an authority level.
     pub author_ids: Option<Vec<i64>>,
     pub topic_ids: Option<Vec<i64>>,
 }
@@ -200,6 +208,8 @@ pub struct AuthorInfo {
     pub author_id: i64,
     pub author_name: String,
     pub authority_type: Option<String>,
+    pub authority_level_id: u8,
+    pub authority_level_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
@@ -688,7 +698,7 @@ async fn enrich_biblios(
 
         let authors = if includes.contains("authors") {
             let rows = sqlx::query_as::<_, AuthorInfo>(
-                "SELECT a.author_id, a.author_name, a.authority_type FROM biblio_author ba JOIN mst_author a ON ba.author_id = a.author_id WHERE ba.biblio_id = ?",
+                "SELECT a.author_id, a.author_name, a.authority_type, ba.level AS authority_level_id, al.authority_level_name FROM biblio_author ba JOIN mst_author a ON ba.author_id = a.author_id JOIN mst_authority_level al ON ba.level = al.authority_level_id WHERE ba.biblio_id = ? ORDER BY ba.level, a.author_name",
             )
             .bind(biblio.biblio_id)
             .fetch_all(&state.pool)
@@ -1341,18 +1351,51 @@ fn row_to_json(row: &MySqlRow) -> JsonValue {
 async fn replace_biblio_links(
     state: &AppState,
     biblio_id: i64,
+    authors: &Option<Vec<BiblioAuthorInput>>,
     author_ids: &Option<Vec<i64>>,
     topic_ids: &Option<Vec<i64>>,
 ) -> Result<(), AppError> {
-    if let Some(author_ids) = author_ids {
+    let author_links = authors
+        .as_ref()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| (item.author_id, item.authority_level_id))
+                .collect::<HashMap<_, _>>()
+        })
+        .or_else(|| {
+            author_ids.as_ref().map(|ids| {
+                ids.iter()
+                    .copied()
+                    .map(|author_id| (author_id, 1))
+                    .collect::<HashMap<_, _>>()
+            })
+        });
+
+    if let Some(author_links) = author_links {
+        for authority_level_id in author_links.values().copied().collect::<HashSet<_>>() {
+            let exists: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM mst_authority_level WHERE authority_level_id = ?",
+            )
+            .bind(authority_level_id)
+            .fetch_one(&state.pool)
+            .await?;
+            if exists == 0 {
+                return Err(AppError::BadRequest(format!(
+                    "authority_level_id {authority_level_id} tidak ditemukan"
+                )));
+            }
+        }
+
         sqlx::query("DELETE FROM biblio_author WHERE biblio_id = ?")
             .bind(biblio_id)
             .execute(&state.pool)
             .await?;
-        for author_id in author_ids.iter().copied().collect::<HashSet<_>>() {
-            sqlx::query("INSERT INTO biblio_author (biblio_id, author_id, level) VALUES (?, ?, 1)")
+        for (author_id, authority_level_id) in author_links {
+            sqlx::query("INSERT INTO biblio_author (biblio_id, author_id, level) VALUES (?, ?, ?)")
                 .bind(biblio_id)
                 .bind(author_id)
+                .bind(authority_level_id)
                 .execute(&state.pool)
                 .await?;
         }
@@ -1430,7 +1473,14 @@ async fn create_biblio(
     .await?;
 
     let biblio_id = result.last_insert_id() as i64;
-    replace_biblio_links(&state, biblio_id, &payload.author_ids, &payload.topic_ids).await?;
+    replace_biblio_links(
+        &state,
+        biblio_id,
+        &payload.authors,
+        &payload.author_ids,
+        &payload.topic_ids,
+    )
+    .await?;
 
     let select_sql = format!("SELECT {BIBLIO_SELECT_COLUMNS} FROM biblio WHERE biblio_id = ?");
     let rec = sqlx::query_as::<_, Biblio>(&select_sql)
@@ -1501,7 +1551,14 @@ async fn update_biblio(
         return Err(AppError::NotFound);
     }
 
-    replace_biblio_links(&state, biblio_id, &payload.author_ids, &payload.topic_ids).await?;
+    replace_biblio_links(
+        &state,
+        biblio_id,
+        &payload.authors,
+        &payload.author_ids,
+        &payload.topic_ids,
+    )
+    .await?;
 
     let select_sql = format!("SELECT {BIBLIO_SELECT_COLUMNS} FROM biblio WHERE biblio_id = ?");
     let rec = sqlx::query_as::<_, Biblio>(&select_sql)
