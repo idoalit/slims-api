@@ -65,6 +65,12 @@ pub struct BiblioAuthorInput {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct BiblioTopicInput {
+    pub topic_id: i64,
+    pub subject_level_id: u8,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpsertBiblio {
     pub title: String,
     pub sor: Option<String>,
@@ -94,6 +100,8 @@ pub struct UpsertBiblio {
     pub authors: Option<Vec<BiblioAuthorInput>>,
     /// Legacy input. New clients should send `authors` with an authority level.
     pub author_ids: Option<Vec<i64>>,
+    pub topics: Option<Vec<BiblioTopicInput>>,
+    /// Legacy input. New clients should send `topics` with a subject level.
     pub topic_ids: Option<Vec<i64>>,
 }
 
@@ -217,6 +225,8 @@ pub struct TopicInfo {
     pub topic_id: i64,
     pub topic: String,
     pub topic_type: String,
+    pub subject_level_id: u8,
+    pub subject_level_name: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -710,7 +720,7 @@ async fn enrich_biblios(
 
         let topics = if includes.contains("topics") {
             let rows = sqlx::query_as::<_, TopicInfo>(
-                "SELECT t.topic_id, t.topic, t.topic_type FROM biblio_topic bt JOIN mst_topic t ON bt.topic_id = t.topic_id WHERE bt.biblio_id = ?",
+                "SELECT t.topic_id, t.topic, t.topic_type, bt.level AS subject_level_id, sl.subject_level_name FROM biblio_topic bt JOIN mst_topic t ON bt.topic_id = t.topic_id JOIN mst_subject_level sl ON bt.level = sl.subject_level_id WHERE bt.biblio_id = ? ORDER BY bt.level, t.topic",
             )
             .bind(biblio.biblio_id)
             .fetch_all(&state.pool)
@@ -1353,6 +1363,7 @@ async fn replace_biblio_links(
     biblio_id: i64,
     authors: &Option<Vec<BiblioAuthorInput>>,
     author_ids: &Option<Vec<i64>>,
+    topics: &Option<Vec<BiblioTopicInput>>,
     topic_ids: &Option<Vec<i64>>,
 ) -> Result<(), AppError> {
     let author_links = authors
@@ -1401,15 +1412,47 @@ async fn replace_biblio_links(
         }
     }
 
-    if let Some(topic_ids) = topic_ids {
+    let topic_links = topics
+        .as_ref()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| (item.topic_id, item.subject_level_id))
+                .collect::<HashMap<_, _>>()
+        })
+        .or_else(|| {
+            topic_ids.as_ref().map(|ids| {
+                ids.iter()
+                    .copied()
+                    .map(|topic_id| (topic_id, 1))
+                    .collect::<HashMap<_, _>>()
+            })
+        });
+
+    if let Some(topic_links) = topic_links {
+        for subject_level_id in topic_links.values().copied().collect::<HashSet<_>>() {
+            let exists: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM mst_subject_level WHERE subject_level_id = ?",
+            )
+            .bind(subject_level_id)
+            .fetch_one(&state.pool)
+            .await?;
+            if exists == 0 {
+                return Err(AppError::BadRequest(format!(
+                    "subject_level_id {subject_level_id} tidak ditemukan"
+                )));
+            }
+        }
+
         sqlx::query("DELETE FROM biblio_topic WHERE biblio_id = ?")
             .bind(biblio_id)
             .execute(&state.pool)
             .await?;
-        for topic_id in topic_ids.iter().copied().collect::<HashSet<_>>() {
-            sqlx::query("INSERT INTO biblio_topic (biblio_id, topic_id, level) VALUES (?, ?, 1)")
+        for (topic_id, subject_level_id) in topic_links {
+            sqlx::query("INSERT INTO biblio_topic (biblio_id, topic_id, level) VALUES (?, ?, ?)")
                 .bind(biblio_id)
                 .bind(topic_id)
+                .bind(subject_level_id)
                 .execute(&state.pool)
                 .await?;
         }
@@ -1478,6 +1521,7 @@ async fn create_biblio(
         biblio_id,
         &payload.authors,
         &payload.author_ids,
+        &payload.topics,
         &payload.topic_ids,
     )
     .await?;
@@ -1556,6 +1600,7 @@ async fn update_biblio(
         biblio_id,
         &payload.authors,
         &payload.author_ids,
+        &payload.topics,
         &payload.topic_ids,
     )
     .await?;

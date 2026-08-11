@@ -138,6 +138,18 @@ pub struct Topic {
 }
 
 #[derive(Debug, Serialize, FromRow, ToSchema)]
+pub struct SubjectType {
+    pub subject_type_id: String,
+    pub subject_type_name: String,
+}
+
+#[derive(Debug, Serialize, FromRow, ToSchema)]
+pub struct SubjectLevel {
+    pub subject_level_id: u8,
+    pub subject_level_name: String,
+}
+
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct ContentType {
     pub id: i64,
     pub content_type: String,
@@ -266,6 +278,13 @@ lookup_payload!(UpsertTopic {
     topic_type: String,
     auth_list: Option<String>,
     classification: String,
+});
+lookup_payload!(UpsertSubjectType {
+    subject_type_id: String,
+    subject_type_name: String,
+});
+lookup_payload!(UpsertSubjectLevel {
+    subject_level_name: String,
 });
 lookup_payload!(UpsertContentType {
     content_type: String,
@@ -652,6 +671,26 @@ pub fn router() -> Router<AppState> {
             get(get_topic).put(update_topic).delete(delete_topic),
         )
         .route(
+            "/subject-types",
+            get(subject_types).post(create_subject_type),
+        )
+        .route(
+            "/subject-types/:id",
+            get(get_subject_type)
+                .put(update_subject_type)
+                .delete(delete_subject_type),
+        )
+        .route(
+            "/subject-levels",
+            get(subject_levels).post(create_subject_level),
+        )
+        .route(
+            "/subject-levels/:id",
+            get(get_subject_level)
+                .put(update_subject_level)
+                .delete(delete_subject_level),
+        )
+        .route(
             "/content-types",
             get(content_types).post(create_content_type),
         )
@@ -1031,21 +1070,114 @@ numeric_lookup_crud!(
     [authority_level_name]
 );
 
+async fn ensure_subject_type(state: &AppState, id: &str) -> Result<(), AppError> {
+    let exists: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM mst_subject_type WHERE subject_type_id = ?")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
+    if exists == 0 {
+        return Err(AppError::BadRequest(format!(
+            "topic_type {id} tidak ditemukan"
+        )));
+    }
+    Ok(())
+}
+
+#[utoipa::path(get, path = "/lookups/topics/{id}", params(("id" = String, Path, description = "Resource ID")), responses((status = 200, body = JsonApiDocument)), security(("bearerAuth" = [])), tag = "Lookups")]
+async fn get_topic(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
+    Ok(Json(lookup_by_id::<Topic>(&state, "SELECT topic_id, topic, topic_type, auth_list, classification FROM mst_topic WHERE topic_id = ?", &id, "topics").await?))
+}
+
+#[utoipa::path(post, path = "/lookups/topics", request_body = UpsertTopic, responses((status = 200, body = JsonApiDocument)), security(("bearerAuth" = [])), tag = "Lookups")]
+async fn create_topic(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(payload): Json<UpsertTopic>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Write)?;
+    ensure_subject_type(&state, &payload.topic_type).await?;
+    let result = sqlx::query("INSERT INTO mst_topic (topic, topic_type, auth_list, classification, input_date, last_update) VALUES (?, ?, ?, ?, CURDATE(), CURDATE())")
+        .bind(&payload.topic)
+        .bind(&payload.topic_type)
+        .bind(&payload.auth_list)
+        .bind(&payload.classification)
+        .execute(&state.pool)
+        .await?;
+    let id = result.last_insert_id().to_string();
+    Ok(Json(lookup_by_id::<Topic>(&state, "SELECT topic_id, topic, topic_type, auth_list, classification FROM mst_topic WHERE topic_id = ?", &id, "topics").await?))
+}
+
+#[utoipa::path(put, path = "/lookups/topics/{id}", request_body = UpsertTopic, params(("id" = String, Path, description = "Resource ID")), responses((status = 200, body = JsonApiDocument)), security(("bearerAuth" = [])), tag = "Lookups")]
+async fn update_topic(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+    Json(payload): Json<UpsertTopic>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Write)?;
+    ensure_subject_type(&state, &payload.topic_type).await?;
+    lookup_by_id::<Topic>(&state, "SELECT topic_id, topic, topic_type, auth_list, classification FROM mst_topic WHERE topic_id = ?", &id, "topics").await?;
+    sqlx::query("UPDATE mst_topic SET topic = ?, topic_type = ?, auth_list = ?, classification = ?, last_update = CURDATE() WHERE topic_id = ?")
+        .bind(&payload.topic)
+        .bind(&payload.topic_type)
+        .bind(&payload.auth_list)
+        .bind(&payload.classification)
+        .bind(&id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(lookup_by_id::<Topic>(&state, "SELECT topic_id, topic, topic_type, auth_list, classification FROM mst_topic WHERE topic_id = ?", &id, "topics").await?))
+}
+
+#[utoipa::path(delete, path = "/lookups/topics/{id}", params(("id" = String, Path, description = "Resource ID")), responses((status = 204, description = "Resource deleted")), security(("bearerAuth" = [])), tag = "Lookups")]
+async fn delete_topic(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+) -> Result<StatusCode, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Write)?;
+    remove_lookup(&state, "DELETE FROM mst_topic WHERE topic_id = ?", &id).await
+}
+
+string_lookup_crud!(
+    get_subject_type,
+    create_subject_type,
+    update_subject_type,
+    delete_subject_type,
+    "/lookups/subject-types",
+    "/lookups/subject-types/{id}",
+    "subject-types",
+    SubjectType,
+    UpsertSubjectType,
+    subject_type_id,
+    "SELECT subject_type_id, subject_type_name FROM mst_subject_type WHERE subject_type_id = ?",
+    "INSERT INTO mst_subject_type (subject_type_id, subject_type_name, input_date, last_update) VALUES (?, ?, CURDATE(), CURDATE())",
+    "UPDATE mst_subject_type SET subject_type_id = ?, subject_type_name = ?, last_update = CURDATE() WHERE subject_type_id = ?",
+    "DELETE FROM mst_subject_type WHERE subject_type_id = ?",
+    [subject_type_id, subject_type_name],
+    [subject_type_id, subject_type_name]
+);
+
 numeric_lookup_crud!(
-    get_topic,
-    create_topic,
-    update_topic,
-    delete_topic,
-    "/lookups/topics",
-    "/lookups/topics/{id}",
-    "topics",
-    Topic,
-    UpsertTopic,
-    "SELECT topic_id, topic, topic_type, auth_list, classification FROM mst_topic WHERE topic_id = ?",
-    "INSERT INTO mst_topic (topic, topic_type, auth_list, classification, input_date, last_update) VALUES (?, ?, ?, ?, CURDATE(), CURDATE())",
-    "UPDATE mst_topic SET topic = ?, topic_type = ?, auth_list = ?, classification = ?, last_update = CURDATE() WHERE topic_id = ?",
-    "DELETE FROM mst_topic WHERE topic_id = ?",
-    [topic, topic_type, auth_list, classification]
+    get_subject_level,
+    create_subject_level,
+    update_subject_level,
+    delete_subject_level,
+    "/lookups/subject-levels",
+    "/lookups/subject-levels/{id}",
+    "subject-levels",
+    SubjectLevel,
+    UpsertSubjectLevel,
+    "SELECT subject_level_id, subject_level_name FROM mst_subject_level WHERE subject_level_id = ?",
+    "INSERT INTO mst_subject_level (subject_level_name, input_date, last_update) VALUES (?, CURDATE(), CURDATE())",
+    "UPDATE mst_subject_level SET subject_level_name = ?, last_update = CURDATE() WHERE subject_level_id = ?",
+    "DELETE FROM mst_subject_level WHERE subject_level_id = ?",
+    [subject_level_name]
 );
 
 numeric_lookup_crud!(
@@ -1552,6 +1684,58 @@ async fn topics(
     .await?;
 
     Ok(Json(document))
+}
+
+#[utoipa::path(
+    get,
+    path = "/lookups/subject-types",
+    responses((status = 200, body = JsonApiDocument)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
+async fn subject_types(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(pagination): Query<Pagination>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
+    Ok(Json(
+        paged_lookup(
+            &state,
+            pagination,
+            "SELECT subject_type_id, subject_type_name FROM mst_subject_type ORDER BY subject_type_id LIMIT ? OFFSET ?",
+            "SELECT COUNT(*) FROM mst_subject_type",
+            "subject-types",
+            |row: &SubjectType| row.subject_type_id.clone(),
+        )
+        .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/lookups/subject-levels",
+    responses((status = 200, body = JsonApiDocument)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
+async fn subject_levels(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(pagination): Query<Pagination>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
+    Ok(Json(
+        paged_lookup(
+            &state,
+            pagination,
+            "SELECT subject_level_id, subject_level_name FROM mst_subject_level ORDER BY subject_level_id LIMIT ? OFFSET ?",
+            "SELECT COUNT(*) FROM mst_subject_level",
+            "subject-levels",
+            |row: &SubjectLevel| row.subject_level_id.to_string(),
+        )
+        .await?,
+    ))
 }
 
 #[utoipa::path(

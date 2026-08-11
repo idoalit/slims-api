@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS `biblio_author` (
 CREATE TABLE IF NOT EXISTS `biblio_topic` (
   `biblio_id` int(11) NOT NULL default '0',
   `topic_id` int(11) NOT NULL default '0',
-  `level` int(1) NOT NULL default '1',
+  `level` tinyint unsigned NOT NULL default '1',
   PRIMARY KEY  (`biblio_id`,`topic_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
@@ -864,7 +864,7 @@ CREATE TABLE IF NOT EXISTS `mst_supplier` (
 CREATE TABLE IF NOT EXISTS `mst_topic` (
   `topic_id` int(11) NOT NULL auto_increment,
   `topic` varchar(50) collate utf8_unicode_ci NOT NULL,
-  `topic_type` enum('t','g','n','tm','gr','oc') collate utf8_unicode_ci NOT NULL,
+  `topic_type` varchar(2) collate utf8_unicode_ci NOT NULL,
   `auth_list` varchar(20) collate utf8_unicode_ci default NULL,
   `classification` VARCHAR( 50 ) COLLATE utf8_unicode_ci NOT NULL COMMENT  'Classification Code',
   `input_date` date default NULL,
@@ -872,6 +872,36 @@ CREATE TABLE IF NOT EXISTS `mst_topic` (
   PRIMARY KEY  (`topic_id`),
   UNIQUE KEY `topic` (`topic`, `topic_type`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci AUTO_INCREMENT=1 ;
+
+CREATE TABLE IF NOT EXISTS `mst_subject_type` (
+  `subject_type_id` varchar(2) collate utf8_unicode_ci NOT NULL,
+  `subject_type_name` varchar(50) collate utf8_unicode_ci NOT NULL,
+  `input_date` date NOT NULL,
+  `last_update` date default NULL,
+  PRIMARY KEY (`subject_type_id`),
+  UNIQUE KEY `subject_type_name` (`subject_type_name`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+INSERT INTO `mst_subject_type` VALUES
+('t', 'Topik', CURDATE(), CURDATE()),
+('g', 'Geografis', CURDATE(), CURDATE()),
+('n', 'Nama', CURDATE(), CURDATE()),
+('tm', 'Temporal', CURDATE(), CURDATE()),
+('gr', 'Genre', CURDATE(), CURDATE()),
+('oc', 'Pekerjaan', CURDATE(), CURDATE());
+
+CREATE TABLE IF NOT EXISTS `mst_subject_level` (
+  `subject_level_id` tinyint unsigned NOT NULL auto_increment,
+  `subject_level_name` varchar(50) collate utf8_unicode_ci NOT NULL,
+  `input_date` date NOT NULL,
+  `last_update` date default NULL,
+  PRIMARY KEY (`subject_level_id`),
+  UNIQUE KEY `subject_level_name` (`subject_level_name`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+INSERT INTO `mst_subject_level` VALUES
+(1, 'Primer', CURDATE(), CURDATE()),
+(2, 'Tambahan', CURDATE(), CURDATE());
 
 --
 -- Dumping data for table `mst_topic`
