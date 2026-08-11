@@ -5,6 +5,7 @@ mod error;
 mod jsonapi;
 mod mcp;
 mod resources;
+mod storage;
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -71,6 +72,7 @@ use crate::{
         resources::contents::get_content_by_path,
         resources::files::list_files,
         resources::files::get_file,
+        resources::uploads::upload_bibliography_cover,
         resources::lookups::member_types,
         resources::lookups::coll_types,
         resources::lookups::locations,
@@ -222,6 +224,8 @@ use crate::{
         resources::files::FileObject,
         resources::files::FileBiblioAttachment,
         resources::files::FileResponse,
+        resources::uploads::UploadResponse,
+        resources::uploads::UploadCoverForm,
         resources::lookups::MemberType,
         resources::lookups::CollType,
         resources::lookups::Location,
@@ -274,6 +278,7 @@ use crate::{
         (name = "Catalog", description = "Katalog bibliografi publik"),
         (name = "Contents", description = "Konten halaman"),
         (name = "Files", description = "Manajemen berkas"),
+        (name = "Uploads", description = "Unggah berkas ke object storage"),
         (name = "Lookups", description = "Data referensi"),
         (name = "Visitors", description = "Kunjungan"),
         (name = "Settings", description = "Pengaturan"),
@@ -309,6 +314,7 @@ async fn main() -> anyhow::Result<()> {
     let config = AppConfig::from_env()?;
     let pool = init_pool(&config.database_url).await?;
     sqlx::migrate!().run(&pool).await?;
+    let object_storage = storage::ObjectStorage::from_env().await?;
     let jwt_secret = extract_secret(config.jwt_secret);
     let state = AppState {
         pool,
@@ -319,6 +325,7 @@ async fn main() -> anyhow::Result<()> {
         refresh_session_ttl: config.refresh_session_ttl,
         refresh_remember_ttl: config.refresh_remember_ttl,
         cookie_secure: config.cookie_secure,
+        object_storage,
     };
 
     let app = build_router(state.clone());
@@ -362,6 +369,7 @@ fn build_router(state: AppState) -> Router {
         .nest("/lookups", resources::lookups::router())
         .nest("/visitors", resources::visitors::router())
         .nest("/files", resources::files::router())
+        .nest("/uploads", resources::uploads::router())
         .nest("/contents", resources::contents::router())
         .nest("/settings", resources::settings::router())
         .merge(mcp_protected)
@@ -433,6 +441,7 @@ mod tests {
             refresh_session_ttl: std::time::Duration::from_secs(43_200),
             refresh_remember_ttl: std::time::Duration::from_secs(2_592_000),
             cookie_secure: false,
+            object_storage: None,
         }
     }
 

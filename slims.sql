@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS `biblio` (
   `publish_place_id` int(11) default NULL,
   `classification` varchar(40) collate utf8_unicode_ci default NULL,
   `notes` text collate utf8_unicode_ci,
-  `image` varchar(100) collate utf8_unicode_ci default NULL,
+  `image` varchar(512) collate utf8_unicode_ci default NULL,
   `file_att` varchar(255) collate utf8_unicode_ci default NULL,
   `opac_hide` smallint(1) default 0,
   `promoted` smallint(1) default 0,

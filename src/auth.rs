@@ -956,6 +956,7 @@ mod tests {
             refresh_session_ttl: std::time::Duration::from_secs(43_200),
             refresh_remember_ttl: std::time::Duration::from_secs(2_592_000),
             cookie_secure: true,
+            object_storage: None,
         }
     }
 

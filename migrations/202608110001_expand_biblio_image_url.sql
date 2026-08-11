@@ -1,0 +1,2 @@
+ALTER TABLE `biblio`
+  MODIFY COLUMN `image` VARCHAR(512) COLLATE utf8_unicode_ci DEFAULT NULL;

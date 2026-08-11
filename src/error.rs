@@ -22,6 +22,8 @@ pub enum AppError {
     TooManyRequests(String),
     #[error("conflict: {0}")]
     Conflict(String),
+    #[error("service unavailable: {0}")]
+    ServiceUnavailable(String),
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
     #[error("internal error: {0}")]
@@ -55,6 +57,11 @@ impl IntoResponse for AppError {
             AppError::Conflict(message) => {
                 (StatusCode::CONFLICT, "Conflict", Some(message.clone()))
             }
+            AppError::ServiceUnavailable(message) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Service Unavailable",
+                Some(message.clone()),
+            ),
             AppError::Database(err) => {
                 if let sqlx::Error::RowNotFound = err {
                     (StatusCode::NOT_FOUND, "Not Found", Some("not found".into()))

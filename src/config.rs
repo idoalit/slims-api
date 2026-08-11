@@ -4,6 +4,8 @@ use anyhow::{Context, bail};
 use dotenvy::dotenv;
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
 
+use crate::storage::ObjectStorage;
+
 #[derive(Clone)]
 pub struct AppState {
     pub pool: MySqlPool,
@@ -14,6 +16,7 @@ pub struct AppState {
     pub refresh_session_ttl: Duration,
     pub refresh_remember_ttl: Duration,
     pub cookie_secure: bool,
+    pub object_storage: Option<ObjectStorage>,
 }
 
 #[derive(Debug)]

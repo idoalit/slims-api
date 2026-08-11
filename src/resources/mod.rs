@@ -7,6 +7,7 @@ pub mod loans;
 pub mod lookups;
 pub mod members;
 pub mod settings;
+pub mod uploads;
 pub mod visitors;
 
 use serde::Deserialize;
