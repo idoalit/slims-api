@@ -58,6 +58,16 @@ impl IntoResponse for AppError {
             AppError::Database(err) => {
                 if let sqlx::Error::RowNotFound = err {
                     (StatusCode::NOT_FOUND, "Not Found", Some("not found".into()))
+                } else if matches!(
+                    err,
+                    sqlx::Error::Database(database_error)
+                        if database_error.is_unique_violation()
+                ) {
+                    (
+                        StatusCode::CONFLICT,
+                        "Conflict",
+                        Some("a resource with the same unique value already exists".into()),
+                    )
                 } else {
                     (StatusCode::INTERNAL_SERVER_ERROR, "Database Error", None)
                 }
