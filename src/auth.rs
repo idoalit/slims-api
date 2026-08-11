@@ -81,27 +81,36 @@ pub enum Permission {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ToSchema)]
 #[allow(dead_code)]
-#[repr(i64)]
 pub enum ModuleAccess {
-    Bibliography = 1,
-    Circulation = 2,
-    Membership = 3,
-    MasterFile = 4,
-    StockTake = 5,
-    System = 6,
-    Reporting = 7,
-    SerialControl = 8,
+    Bibliography,
+    Circulation,
+    Membership,
+    MasterFile,
+    StockTake,
+    System,
+    Reporting,
+    SerialControl,
 }
 
 impl ModuleAccess {
-    pub fn id(self) -> i64 {
-        self as i64
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Bibliography => "bibliography",
+            Self::Circulation => "circulation",
+            Self::Membership => "membership",
+            Self::MasterFile => "master_file",
+            Self::StockTake => "stock_take",
+            Self::System => "system",
+            Self::Reporting => "reporting",
+            Self::SerialControl => "serial_control",
+        }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub struct ModulePermission {
     pub module_id: i64,
+    pub module_name: String,
     pub read: bool,
     pub write: bool,
 }
@@ -146,7 +155,7 @@ impl AuthUser {
             .claims
             .access
             .iter()
-            .find(|item| item.module_id == module.id());
+            .find(|item| item.module_name == module.name());
         match (access, permission) {
             (Some(access), Permission::Read) => access.read || access.write,
             (Some(access), Permission::Write) => access.write,
@@ -889,6 +898,7 @@ fn parse_groups(raw: Option<&str>) -> Vec<i64> {
 #[derive(Debug, FromRow)]
 struct GroupAccessRow {
     module_id: i64,
+    module_name: String,
     r: i32,
     w: i32,
 }
@@ -902,14 +912,16 @@ async fn fetch_group_access(
     }
 
     let mut builder = QueryBuilder::new(
-        "SELECT module_id, MAX(r) AS r, MAX(w) AS w FROM group_access WHERE group_id IN (",
+        "SELECT ga.module_id, m.module_name, MAX(ga.r) AS r, MAX(ga.w) AS w \
+         FROM group_access ga JOIN mst_module m ON m.module_id = ga.module_id \
+         WHERE ga.group_id IN (",
     );
 
     let mut separated = builder.separated(",");
     for group_id in group_ids {
         separated.push_bind(group_id);
     }
-    builder.push(") GROUP BY module_id");
+    builder.push(") GROUP BY ga.module_id, m.module_name");
 
     let rows = builder
         .build_query_as::<GroupAccessRow>()
@@ -920,6 +932,7 @@ async fn fetch_group_access(
         .into_iter()
         .map(|row| ModulePermission {
             module_id: row.module_id,
+            module_name: row.module_name,
             read: row.r != 0,
             write: row.w != 0,
         })
@@ -966,7 +979,8 @@ mod tests {
     #[test]
     fn permissions_are_module_aware() {
         let user = auth_user(vec![ModulePermission {
-            module_id: ModuleAccess::Bibliography.id(),
+            module_id: 42,
+            module_name: ModuleAccess::Bibliography.name().into(),
             read: true,
             write: false,
         }]);
@@ -979,7 +993,8 @@ mod tests {
     #[test]
     fn write_permission_implies_read() {
         let user = auth_user(vec![ModulePermission {
-            module_id: ModuleAccess::Circulation.id(),
+            module_id: 99,
+            module_name: ModuleAccess::Circulation.name().into(),
             read: false,
             write: true,
         }]);

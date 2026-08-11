@@ -33,6 +33,18 @@ Content-Type: application/json
 ```
 
 The response contains a short-lived access token. Authentication responses use `Cache-Control: no-store`.
+Each item in `attributes.access` contains `module_id`, the stable `module_name`, `read`, and
+`write`. Clients must use `module_name` for permission checks because numeric module IDs can
+differ between installations.
+
+```json
+{
+  "module_id": 1,
+  "module_name": "bibliography",
+  "read": true,
+  "write": false
+}
+```
 
 ## Access-token validation
 
