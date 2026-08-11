@@ -1015,6 +1015,25 @@ mod tests {
         assert_ne!(hash_value(&parsed.1), parsed.1);
     }
 
+    #[tokio::test]
+    async fn refresh_cookie_matches_transport_security_mode() {
+        let token = IssuedRefreshToken {
+            raw: format!("{}.{}", random_value(16), random_value(32)),
+            expires_at: Utc::now().naive_utc() + ChronoDuration::hours(1),
+            remember_me: false,
+        };
+        let secure_state = app_state();
+        let secure_cookie = build_refresh_cookie(&secure_state, &token);
+        assert!(secure_cookie.starts_with("__Host-slims-refresh="));
+        assert!(secure_cookie.contains("; Secure"));
+
+        let mut local_http_state = secure_state;
+        local_http_state.cookie_secure = false;
+        let local_cookie = build_refresh_cookie(&local_http_state, &token);
+        assert!(local_cookie.starts_with("slims_refresh="));
+        assert!(!local_cookie.contains("; Secure"));
+    }
+
     #[test]
     fn dummy_password_hash_keeps_unknown_user_verification_realistic() {
         assert!(verify("invalid-password", DUMMY_PASSWORD_HASH).unwrap());
