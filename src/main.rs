@@ -88,6 +88,74 @@ use crate::{
         resources::lookups::carrier_types,
         resources::lookups::relation_terms,
         resources::lookups::loan_rules,
+        resources::lookups::get_member_type,
+        resources::lookups::create_member_type,
+        resources::lookups::update_member_type,
+        resources::lookups::delete_member_type,
+        resources::lookups::get_coll_type,
+        resources::lookups::create_coll_type,
+        resources::lookups::update_coll_type,
+        resources::lookups::delete_coll_type,
+        resources::lookups::get_location,
+        resources::lookups::create_location,
+        resources::lookups::update_location,
+        resources::lookups::delete_location,
+        resources::lookups::get_language,
+        resources::lookups::create_language,
+        resources::lookups::update_language,
+        resources::lookups::delete_language,
+        resources::lookups::get_gmd,
+        resources::lookups::create_gmd,
+        resources::lookups::update_gmd,
+        resources::lookups::delete_gmd,
+        resources::lookups::get_item_status,
+        resources::lookups::create_item_status,
+        resources::lookups::update_item_status,
+        resources::lookups::delete_item_status,
+        resources::lookups::get_frequency,
+        resources::lookups::create_frequency,
+        resources::lookups::update_frequency,
+        resources::lookups::delete_frequency,
+        resources::lookups::get_module,
+        resources::lookups::create_module,
+        resources::lookups::update_module,
+        resources::lookups::delete_module,
+        resources::lookups::get_place,
+        resources::lookups::create_place,
+        resources::lookups::update_place,
+        resources::lookups::delete_place,
+        resources::lookups::get_publisher,
+        resources::lookups::create_publisher,
+        resources::lookups::update_publisher,
+        resources::lookups::delete_publisher,
+        resources::lookups::get_supplier,
+        resources::lookups::create_supplier,
+        resources::lookups::update_supplier,
+        resources::lookups::delete_supplier,
+        resources::lookups::get_topic,
+        resources::lookups::create_topic,
+        resources::lookups::update_topic,
+        resources::lookups::delete_topic,
+        resources::lookups::get_content_type,
+        resources::lookups::create_content_type,
+        resources::lookups::update_content_type,
+        resources::lookups::delete_content_type,
+        resources::lookups::get_media_type,
+        resources::lookups::create_media_type,
+        resources::lookups::update_media_type,
+        resources::lookups::delete_media_type,
+        resources::lookups::get_carrier_type,
+        resources::lookups::create_carrier_type,
+        resources::lookups::update_carrier_type,
+        resources::lookups::delete_carrier_type,
+        resources::lookups::get_relation_term,
+        resources::lookups::create_relation_term,
+        resources::lookups::update_relation_term,
+        resources::lookups::delete_relation_term,
+        resources::lookups::get_loan_rule,
+        resources::lookups::create_loan_rule,
+        resources::lookups::update_loan_rule,
+        resources::lookups::delete_loan_rule,
         resources::visitors::list_visitors,
         resources::visitors::get_visitor,
         resources::settings::list_settings,
@@ -166,6 +234,23 @@ use crate::{
         resources::lookups::CarrierType,
         resources::lookups::RelationTerm,
         resources::lookups::LoanRule,
+        resources::lookups::UpsertMemberType,
+        resources::lookups::UpsertCollType,
+        resources::lookups::UpsertLocation,
+        resources::lookups::UpsertLanguage,
+        resources::lookups::UpsertGmd,
+        resources::lookups::UpsertItemStatus,
+        resources::lookups::UpsertFrequency,
+        resources::lookups::UpsertModule,
+        resources::lookups::UpsertPlace,
+        resources::lookups::UpsertPublisher,
+        resources::lookups::UpsertSupplier,
+        resources::lookups::UpsertTopic,
+        resources::lookups::UpsertContentType,
+        resources::lookups::UpsertMediaType,
+        resources::lookups::UpsertCarrierType,
+        resources::lookups::UpsertRelationTerm,
+        resources::lookups::UpsertLoanRule,
         resources::visitors::Visitor,
         resources::settings::SettingResponse,
         jsonapi::JsonApiDocument,
@@ -374,6 +459,47 @@ mod tests {
                 paths[path]["get"]["security"][0]["bearerAuth"],
                 serde_json::json!([])
             );
+        }
+    }
+
+    #[test]
+    fn openapi_exposes_crud_for_all_lookup_resources() {
+        let document = serde_json::to_value(ApiDoc::openapi()).expect("OpenAPI serializes");
+        let paths = &document["paths"];
+
+        for resource in [
+            "member-types",
+            "coll-types",
+            "locations",
+            "languages",
+            "gmd",
+            "item-statuses",
+            "frequencies",
+            "modules",
+            "places",
+            "publishers",
+            "suppliers",
+            "topics",
+            "content-types",
+            "media-types",
+            "carrier-types",
+            "relation-terms",
+            "loan-rules",
+        ] {
+            let collection = format!("/lookups/{resource}");
+            let item = format!("/lookups/{resource}/{{id}}");
+
+            assert!(
+                paths[&collection]["get"].is_object(),
+                "missing GET {collection}"
+            );
+            assert!(
+                paths[&collection]["post"].is_object(),
+                "missing POST {collection}"
+            );
+            assert!(paths[&item]["get"].is_object(), "missing GET {item}");
+            assert!(paths[&item]["put"].is_object(), "missing PUT {item}");
+            assert!(paths[&item]["delete"].is_object(), "missing DELETE {item}");
         }
     }
 

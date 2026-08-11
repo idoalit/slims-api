@@ -755,9 +755,21 @@ The `loans` resource manages the circulation records of items lent to members wi
 ---\n
 ### Lookups
 
-The `lookups` resource provides read-only access to various master data tables and configuration lists used throughout the SLiMS system. These endpoints are crucial for populating dropdowns, validating input, and understanding the categorical data within the system.
+The `lookups` resource provides CRUD access to master data tables and configuration lists used throughout the SLiMS system. These endpoints are useful for populating dropdowns, validating input, and maintaining the categorical data within the system.
 
-**Module Access Required:** `MasterFile` with `Read` permission for all lookup endpoints.
+**Module Access Required:** `MasterFile` with `Read` permission for list/detail requests and `Write` permission for create/update/delete requests.
+
+#### Common CRUD Operations
+
+Every lookup resource documented below supports the same URL pattern:
+
+* `GET /api/v1/lookups/{resource}` — paginated list.
+* `GET /api/v1/lookups/{resource}/{id}` — retrieve one resource.
+* `POST /api/v1/lookups/{resource}` — create a resource using its documented attributes (generated numeric IDs are omitted from the request).
+* `PUT /api/v1/lookups/{resource}/{id}` — replace the editable attributes. For string-keyed resources (`locations`, `languages`, `item-statuses`, and `relation-terms`), the identifier is included in the request and may be changed.
+* `DELETE /api/v1/lookups/{resource}/{id}` — delete a resource and return `204 No Content`.
+
+Create and update return a single JSON:API resource document. A missing detail/update/delete target returns `404 Not Found`.
 
 #### Common Query Parameters for Lookups
 
@@ -772,7 +784,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   **Description:** Retrieves a paginated list of defined member types with their associated loan limits and periods.
 *   **Resource Type:** `member-types`
-*   **Data Model Attributes:** `member_type_id`, `member_type_name`, `loan_limit`, `loan_periode`.
+*   **Data Model Attributes:** `member_type_id`, `member_type_name`, `loan_limit`, `loan_periode`, `enable_reserve`, `reserve_limit`, `member_periode`, `reborrow_limit`, `fine_each_day`, `grace_periode`.
 *   **Example Response:**
     ```json
     {
@@ -820,7 +832,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   **Description:** Retrieves a paginated list of General Material Designations (GMDs) used for classifying bibliographic materials.
 *   **Resource Type:** `gmd`
-*   **Data Model Attributes:** `gmd_id`, `gmd_code`, `gmd_name`.
+*   **Data Model Attributes:** `gmd_id`, `gmd_code`, `gmd_name`, `icon_image`.
 
 #### Get Item Statuses
 
@@ -828,7 +840,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   **Description:** Retrieves a paginated list of item statuses (e.g., Available, On Loan, Reference).
 *   **Resource Type:** `item-statuses`
-*   **Data Model Attributes:** `item_status_id`, `item_status_name`, `no_loan` (boolean indicating if the status prevents loans).
+*   **Data Model Attributes:** `item_status_id`, `item_status_name`, `no_loan`, `rules`, `skip_stock_take`.
 
 #### Get Frequencies
 
@@ -836,7 +848,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   **Description:** Retrieves a paginated list of publication frequencies (e.g., Daily, Weekly, Monthly).
 *   **Resource Type:** `frequencies`
-*   **Data Model Attributes:** `frequency_id`, `frequency`, `language_prefix`.
+*   **Data Model Attributes:** `frequency_id`, `frequency`, `language_prefix`, `time_increment`, `time_unit`.
 
 #### Get Modules
 
@@ -868,7 +880,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   **Description:** Retrieves a paginated list of suppliers.
 *   **Resource Type:** `suppliers`
-*   **Data Model Attributes:** `supplier_id`, `supplier_name`.
+*   **Data Model Attributes:** `supplier_id`, `supplier_name`, `address`, `postal_code`, `phone`, `contact`, `fax`, `account`, `e_mail`.
 
 #### Get Topics
 
@@ -876,7 +888,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   **Description:** Retrieves a paginated list of topics/subjects.
 *   **Resource Type:** `topics`
-*   **Data Model Attributes:** `topic_id`, `topic`, `topic_type`.
+*   **Data Model Attributes:** `topic_id`, `topic`, `topic_type`, `auth_list`, `classification`.
 
 #### Get Content Types
 
@@ -884,7 +896,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   **Description:** Retrieves a paginated list of content types.
 *   **Resource Type:** `content-types`
-*   **Data Model Attributes:** `id`, `content_type`, `code`.
+*   **Data Model Attributes:** `id`, `content_type`, `code`, `code2`.
 
 #### Get Media Types
 
@@ -892,7 +904,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   **Description:** Retrieves a paginated list of media types.
 *   **Resource Type:** `media-types`
-*   **Data Model Attributes:** `id`, `media_type`, `code`.
+*   **Data Model Attributes:** `id`, `media_type`, `code`, `code2`.
 
 #### Get Carrier Types
 
@@ -900,7 +912,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   **Description:** Retrieves a paginated list of carrier types.
 *   **Resource Type:** `carrier-types`
-*   **Data Model Attributes:** `id`, `carrier_type`, `code`.
+*   **Data Model Attributes:** `id`, `carrier_type`, `code`, `code2`.
 
 #### Get Relation Terms
 
@@ -916,7 +928,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   **Description:** Retrieves a paginated list of loan rules, defining loan limits and periods based on member type and collection type.
 *   **Resource Type:** `loan-rules`
-*   **Data Model Attributes:** `loan_rules_id`, `member_type_id`, `coll_type_id`, `loan_limit`, `loan_periode`.
+*   **Data Model Attributes:** `loan_rules_id`, `member_type_id`, `coll_type_id`, `gmd_id`, `loan_limit`, `loan_periode`, `reborrow_limit`, `fine_each_day`, `grace_periode`.
 
 
 ---\n

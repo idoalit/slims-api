@@ -47,10 +47,10 @@ API Overview (high level)
 - `GET /files` — paginated list of uploaded files, optional `include=biblios`.
 - `GET /visitors` — visitor log, paginated.
 - `GET /settings` — list settings or fetch a key; supports nested paths via dot notation.
-- `GET /lookups/*` — paginated lookup lists (member-types, coll-types, locations, topics, content/media/carrier types, etc.).
+- `/lookups/*` — paginated lookup lists plus `GET /{id}`, `POST`, `PUT /{id}`, and `DELETE /{id}` for member types, collection types, locations, topics, content/media/carrier types, and other reference data.
 - `GET /biblios/search` — simple search across title, authors, and topics with `q`, paginated and supports `include`.
 - `POST /biblios/search/advanced` — advanced search with field-specific clauses and boolean logic.
-- Standard CRUD for members, biblios, items; loans support create/return endpoints.
+- Standard CRUD for members, biblios, items, and lookup/reference resources; loans support create/return endpoints.
 - OpenAPI docs + Swagger UI available at `/docs` (served from `/api-docs/openapi.json`).
 
 Dashboard fields are returned as `null` when the authenticated user lacks read access to the corresponding module. Bibliography controls bibliography/item/DDC data, Membership controls member totals, and Circulation controls loan KPIs, trends, and popular books. Date ranges default to the latest 30 days and may span at most 366 days.

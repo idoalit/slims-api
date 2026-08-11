@@ -76,4 +76,3 @@ impl ServerHandler for LibraryMcpServer {
         )
     }
 }
-
