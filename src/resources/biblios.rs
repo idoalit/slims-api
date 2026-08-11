@@ -30,10 +30,16 @@ use crate::{
 pub struct Biblio {
     pub biblio_id: i64,
     pub title: String,
+    pub sor: Option<String>,
+    pub edition: Option<String>,
+    pub isbn_issn: Option<String>,
     pub gmd_id: Option<i32>,
     pub publisher_id: Option<i32>,
     pub publish_year: Option<String>,
+    pub collation: Option<String>,
+    pub series_title: Option<String>,
     pub language_id: Option<String>,
+    pub source: Option<String>,
     pub content_type_id: Option<i32>,
     pub media_type_id: Option<i32>,
     pub carrier_type_id: Option<i32>,
@@ -41,8 +47,13 @@ pub struct Biblio {
     pub publish_place_id: Option<i32>,
     pub classification: Option<String>,
     pub call_number: Option<String>,
+    pub notes: Option<String>,
+    pub image: Option<String>,
+    pub file_att: Option<String>,
     pub opac_hide: Option<i16>,
     pub promoted: Option<i16>,
+    pub labels: Option<String>,
+    pub spec_detail_info: Option<String>,
     pub input_date: Option<NaiveDateTime>,
     pub last_update: Option<NaiveDateTime>,
 }
@@ -50,14 +61,32 @@ pub struct Biblio {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpsertBiblio {
     pub title: String,
+    pub sor: Option<String>,
+    pub edition: Option<String>,
+    pub isbn_issn: Option<String>,
     pub gmd_id: Option<i32>,
     pub publisher_id: Option<i32>,
     pub publish_year: Option<String>,
+    pub collation: Option<String>,
+    pub series_title: Option<String>,
     pub language_id: Option<String>,
+    pub source: Option<String>,
+    pub content_type_id: Option<i32>,
+    pub media_type_id: Option<i32>,
+    pub carrier_type_id: Option<i32>,
+    pub frequency_id: Option<i32>,
+    pub publish_place_id: Option<i32>,
     pub classification: Option<String>,
     pub call_number: Option<String>,
+    pub notes: Option<String>,
+    pub image: Option<String>,
+    pub file_att: Option<String>,
     pub opac_hide: Option<i16>,
     pub promoted: Option<i16>,
+    pub labels: Option<String>,
+    pub spec_detail_info: Option<String>,
+    pub author_ids: Option<Vec<i64>>,
+    pub topic_ids: Option<Vec<i64>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
@@ -219,10 +248,16 @@ pub struct BiblioResponse {
 pub struct PublicBiblio {
     pub biblio_id: i64,
     pub title: String,
+    pub sor: Option<String>,
+    pub edition: Option<String>,
+    pub isbn_issn: Option<String>,
     pub gmd_id: Option<i32>,
     pub publisher_id: Option<i32>,
     pub publish_year: Option<String>,
+    pub collation: Option<String>,
+    pub series_title: Option<String>,
     pub language_id: Option<String>,
+    pub source: Option<String>,
     pub content_type_id: Option<i32>,
     pub media_type_id: Option<i32>,
     pub carrier_type_id: Option<i32>,
@@ -230,6 +265,10 @@ pub struct PublicBiblio {
     pub publish_place_id: Option<i32>,
     pub classification: Option<String>,
     pub call_number: Option<String>,
+    pub notes: Option<String>,
+    pub image: Option<String>,
+    pub labels: Option<String>,
+    pub spec_detail_info: Option<String>,
 }
 
 impl From<Biblio> for PublicBiblio {
@@ -237,10 +276,16 @@ impl From<Biblio> for PublicBiblio {
         Self {
             biblio_id: biblio.biblio_id,
             title: biblio.title,
+            sor: biblio.sor,
+            edition: biblio.edition,
+            isbn_issn: biblio.isbn_issn,
             gmd_id: biblio.gmd_id,
             publisher_id: biblio.publisher_id,
             publish_year: biblio.publish_year,
+            collation: biblio.collation,
+            series_title: biblio.series_title,
             language_id: biblio.language_id,
+            source: biblio.source,
             content_type_id: biblio.content_type_id,
             media_type_id: biblio.media_type_id,
             carrier_type_id: biblio.carrier_type_id,
@@ -248,6 +293,10 @@ impl From<Biblio> for PublicBiblio {
             publish_place_id: biblio.publish_place_id,
             classification: biblio.classification,
             call_number: biblio.call_number,
+            notes: biblio.notes,
+            image: biblio.image,
+            labels: biblio.labels,
+            spec_detail_info: biblio.spec_detail_info,
         }
     }
 }
@@ -329,6 +378,9 @@ const PUBLIC_INCLUDES: &[&str] = &[
     "attachments",
     "files",
 ];
+
+const BIBLIO_SELECT_COLUMNS: &str = "biblio_id, title, sor, edition, isbn_issn, gmd_id, publisher_id, publish_year, collation, series_title, language_id, source, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, notes, image, file_att, opac_hide, promoted, labels, spec_detail_info, input_date, last_update";
+const BIBLIO_SELECT_COLUMNS_QUALIFIED: &str = "b.biblio_id, b.title, b.sor, b.edition, b.isbn_issn, b.gmd_id, b.publisher_id, b.publish_year, b.collation, b.series_title, b.language_id, b.source, b.content_type_id, b.media_type_id, b.carrier_type_id, b.frequency_id, b.publish_place_id, b.classification, b.call_number, b.notes, b.image, b.file_att, b.opac_hide, b.promoted, b.labels, b.spec_detail_info, b.input_date, b.last_update";
 
 const BIBLIO_SORTS: &[SortField<'_>] = &[
     SortField::new("biblio_id", "biblio.biblio_id"),
@@ -742,13 +794,15 @@ async fn fetch_biblio_response(
 ) -> Result<BiblioResponse, AppError> {
     let sql = match visibility {
         CatalogVisibility::Protected => {
-            "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ?"
+            format!("SELECT {BIBLIO_SELECT_COLUMNS} FROM biblio WHERE biblio_id = ?")
         }
         CatalogVisibility::Public => {
-            "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ? AND COALESCE(opac_hide, 0) = 0"
+            format!(
+                "SELECT {BIBLIO_SELECT_COLUMNS} FROM biblio WHERE biblio_id = ? AND COALESCE(opac_hide, 0) = 0"
+            )
         }
     };
-    let row = sqlx::query_as::<_, Biblio>(sql)
+    let row = sqlx::query_as::<_, Biblio>(&sql)
         .bind(biblio_id)
         .fetch_one(&state.pool)
         .await?;
@@ -811,7 +865,7 @@ async fn list_public_biblios(
         .await?;
 
     let data_sql = format!(
-        "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio {where_sql} ORDER BY {sort_clause} LIMIT ? OFFSET ?"
+        "SELECT {BIBLIO_SELECT_COLUMNS} FROM biblio {where_sql} ORDER BY {sort_clause} LIMIT ? OFFSET ?"
     );
     let rows = bind_filters_to_query(sqlx::query_as::<_, Biblio>(&data_sql), &filters)
         .bind(limit)
@@ -891,10 +945,7 @@ async fn search_public_biblios(
 
     let data_sql = format!(
         r#"
-        SELECT b.biblio_id, b.title, b.gmd_id, b.publisher_id, b.publish_year, b.language_id,
-               b.content_type_id, b.media_type_id, b.carrier_type_id, b.frequency_id,
-               b.publish_place_id, b.classification, b.call_number, b.opac_hide,
-               b.promoted, b.input_date, b.last_update
+        SELECT {BIBLIO_SELECT_COLUMNS_QUALIFIED}
         FROM biblio b
         JOIN ({ids_subquery}) ids ON ids.biblio_id = b.biblio_id
         WHERE COALESCE(b.opac_hide, 0) = 0
@@ -991,7 +1042,7 @@ async fn list_biblios(
         .await?;
 
     let data_sql = format!(
-        "SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio {} ORDER BY {} LIMIT ? OFFSET ?",
+        "SELECT {BIBLIO_SELECT_COLUMNS} FROM biblio {} ORDER BY {} LIMIT ? OFFSET ?",
         where_sql, sort_clause
     );
     let rows = bind_filters_to_query(sqlx::query_as::<_, Biblio>(&data_sql), &filters)
@@ -1070,10 +1121,7 @@ async fn simple_search_biblios(
 
     let data_sql = format!(
         r#"
-        SELECT b.biblio_id, b.title, b.gmd_id, b.publisher_id, b.publish_year, b.language_id,
-               b.content_type_id, b.media_type_id, b.carrier_type_id, b.frequency_id,
-               b.publish_place_id, b.classification, b.call_number, b.opac_hide,
-               b.promoted, b.input_date, b.last_update
+        SELECT {BIBLIO_SELECT_COLUMNS_QUALIFIED}
         FROM biblio b
         JOIN ({}) ids ON ids.biblio_id = b.biblio_id
         ORDER BY b.biblio_id DESC
@@ -1219,7 +1267,7 @@ async fn advanced_search_biblios(
     let total = count_query.fetch_one(&state.pool).await?;
 
     let data_sql = format!(
-        "SELECT DISTINCT b.biblio_id, b.title, b.gmd_id, b.publisher_id, b.publish_year, b.language_id, b.content_type_id, b.media_type_id, b.carrier_type_id, b.frequency_id, b.publish_place_id, b.classification, b.call_number, b.opac_hide, b.promoted, b.input_date, b.last_update{}{} ORDER BY b.biblio_id DESC LIMIT ? OFFSET ?",
+        "SELECT DISTINCT {BIBLIO_SELECT_COLUMNS_QUALIFIED}{}{} ORDER BY b.biblio_id DESC LIMIT ? OFFSET ?",
         base_from, where_clause
     );
     let mut data_query = sqlx::query_as::<_, Biblio>(&data_sql);
@@ -1290,6 +1338,43 @@ fn row_to_json(row: &MySqlRow) -> JsonValue {
     JsonValue::Object(map)
 }
 
+async fn replace_biblio_links(
+    state: &AppState,
+    biblio_id: i64,
+    author_ids: &Option<Vec<i64>>,
+    topic_ids: &Option<Vec<i64>>,
+) -> Result<(), AppError> {
+    if let Some(author_ids) = author_ids {
+        sqlx::query("DELETE FROM biblio_author WHERE biblio_id = ?")
+            .bind(biblio_id)
+            .execute(&state.pool)
+            .await?;
+        for author_id in author_ids.iter().copied().collect::<HashSet<_>>() {
+            sqlx::query("INSERT INTO biblio_author (biblio_id, author_id, level) VALUES (?, ?, 1)")
+                .bind(biblio_id)
+                .bind(author_id)
+                .execute(&state.pool)
+                .await?;
+        }
+    }
+
+    if let Some(topic_ids) = topic_ids {
+        sqlx::query("DELETE FROM biblio_topic WHERE biblio_id = ?")
+            .bind(biblio_id)
+            .execute(&state.pool)
+            .await?;
+        for topic_id in topic_ids.iter().copied().collect::<HashSet<_>>() {
+            sqlx::query("INSERT INTO biblio_topic (biblio_id, topic_id, level) VALUES (?, ?, 1)")
+                .bind(biblio_id)
+                .bind(topic_id)
+                .execute(&state.pool)
+                .await?;
+        }
+    }
+
+    Ok(())
+}
+
 #[utoipa::path(
     post,
     path = "/biblios",
@@ -1308,24 +1393,44 @@ async fn create_biblio(
     let now = chrono::Utc::now().naive_utc();
 
     let result = sqlx::query(
-        "INSERT INTO biblio (title, gmd_id, publisher_id, publish_year, language_id, classification, call_number, opac_hide, promoted, input_date, last_update) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO biblio (title, sor, edition, isbn_issn, gmd_id, publisher_id, publish_year, collation, series_title, language_id, source, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, notes, image, file_att, opac_hide, promoted, labels, spec_detail_info, input_date, last_update) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&payload.title)
+    .bind(&payload.sor)
+    .bind(&payload.edition)
+    .bind(&payload.isbn_issn)
     .bind(payload.gmd_id)
     .bind(payload.publisher_id)
     .bind(&payload.publish_year)
+    .bind(&payload.collation)
+    .bind(&payload.series_title)
     .bind(&payload.language_id)
+    .bind(&payload.source)
+    .bind(payload.content_type_id)
+    .bind(payload.media_type_id)
+    .bind(payload.carrier_type_id)
+    .bind(payload.frequency_id)
+    .bind(payload.publish_place_id)
     .bind(&payload.classification)
     .bind(&payload.call_number)
+    .bind(&payload.notes)
+    .bind(&payload.image)
+    .bind(&payload.file_att)
     .bind(payload.opac_hide.unwrap_or(0))
     .bind(payload.promoted.unwrap_or(0))
+    .bind(&payload.labels)
+    .bind(&payload.spec_detail_info)
     .bind(now)
     .bind(now)
     .execute(&state.pool)
     .await?;
 
-    let rec = sqlx::query_as::<_, Biblio>("SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ?")
-        .bind(result.last_insert_id() as i64)
+    let biblio_id = result.last_insert_id() as i64;
+    replace_biblio_links(&state, biblio_id, &payload.author_ids, &payload.topic_ids).await?;
+
+    let select_sql = format!("SELECT {BIBLIO_SELECT_COLUMNS} FROM biblio WHERE biblio_id = ?");
+    let rec = sqlx::query_as::<_, Biblio>(&select_sql)
+        .bind(biblio_id)
         .fetch_one(&state.pool)
         .await?;
 
@@ -1356,17 +1461,33 @@ async fn update_biblio(
     let now = chrono::Utc::now().naive_utc();
 
     let updated = sqlx::query(
-        "UPDATE biblio SET title = ?, gmd_id = ?, publisher_id = ?, publish_year = ?, language_id = ?, classification = ?, call_number = ?, opac_hide = ?, promoted = ?, last_update = ? WHERE biblio_id = ?",
+        "UPDATE biblio SET title = ?, sor = ?, edition = ?, isbn_issn = ?, gmd_id = ?, publisher_id = ?, publish_year = ?, collation = ?, series_title = ?, language_id = ?, source = ?, content_type_id = ?, media_type_id = ?, carrier_type_id = ?, frequency_id = ?, publish_place_id = ?, classification = ?, call_number = ?, notes = ?, image = ?, file_att = ?, opac_hide = ?, promoted = ?, labels = ?, spec_detail_info = ?, last_update = ? WHERE biblio_id = ?",
     )
     .bind(&payload.title)
+    .bind(&payload.sor)
+    .bind(&payload.edition)
+    .bind(&payload.isbn_issn)
     .bind(payload.gmd_id)
     .bind(payload.publisher_id)
     .bind(&payload.publish_year)
+    .bind(&payload.collation)
+    .bind(&payload.series_title)
     .bind(&payload.language_id)
+    .bind(&payload.source)
+    .bind(payload.content_type_id)
+    .bind(payload.media_type_id)
+    .bind(payload.carrier_type_id)
+    .bind(payload.frequency_id)
+    .bind(payload.publish_place_id)
     .bind(&payload.classification)
     .bind(&payload.call_number)
+    .bind(&payload.notes)
+    .bind(&payload.image)
+    .bind(&payload.file_att)
     .bind(payload.opac_hide.unwrap_or(0))
     .bind(payload.promoted.unwrap_or(0))
+    .bind(&payload.labels)
+    .bind(&payload.spec_detail_info)
     .bind(now)
     .bind(biblio_id)
     .execute(&state.pool)
@@ -1376,7 +1497,10 @@ async fn update_biblio(
         return Err(AppError::NotFound);
     }
 
-    let rec = sqlx::query_as::<_, Biblio>("SELECT biblio_id, title, gmd_id, publisher_id, publish_year, language_id, content_type_id, media_type_id, carrier_type_id, frequency_id, publish_place_id, classification, call_number, opac_hide, promoted, input_date, last_update FROM biblio WHERE biblio_id = ?")
+    replace_biblio_links(&state, biblio_id, &payload.author_ids, &payload.topic_ids).await?;
+
+    let select_sql = format!("SELECT {BIBLIO_SELECT_COLUMNS} FROM biblio WHERE biblio_id = ?");
+    let rec = sqlx::query_as::<_, Biblio>(&select_sql)
         .bind(biblio_id)
         .fetch_one(&state.pool)
         .await?;
@@ -1420,10 +1544,16 @@ mod tests {
         Biblio {
             biblio_id: 42,
             title: "Public title".into(),
+            sor: Some("Author statement".into()),
+            edition: Some("2nd ed.".into()),
+            isbn_issn: Some("9780000000000".into()),
             gmd_id: Some(1),
             publisher_id: Some(2),
             publish_year: Some("2026".into()),
+            collation: Some("x, 200 pages".into()),
+            series_title: Some("Series".into()),
             language_id: Some("en".into()),
+            source: Some("buy".into()),
             content_type_id: Some(3),
             media_type_id: Some(4),
             carrier_type_id: Some(5),
@@ -1431,8 +1561,13 @@ mod tests {
             publish_place_id: Some(6),
             classification: Some("005.13".into()),
             call_number: Some("005.13 PUB".into()),
+            notes: Some("Notes".into()),
+            image: Some("cover.jpg".into()),
+            file_att: Some("private.pdf".into()),
             opac_hide: Some(1),
             promoted: Some(1),
+            labels: Some("favorite".into()),
+            spec_detail_info: Some("Scale 1:1000".into()),
             input_date: None,
             last_update: None,
         }

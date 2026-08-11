@@ -95,6 +95,15 @@ pub struct Publisher {
 }
 
 #[derive(Debug, Serialize, FromRow, ToSchema)]
+pub struct Author {
+    pub author_id: i64,
+    pub author_name: String,
+    pub author_year: Option<String>,
+    pub authority_type: Option<String>,
+    pub auth_list: Option<String>,
+}
+
+#[derive(Debug, Serialize, FromRow, ToSchema)]
 pub struct Supplier {
     pub supplier_id: i64,
     pub supplier_name: String,
@@ -216,6 +225,12 @@ lookup_payload!(UpsertModule {
 lookup_payload!(UpsertPlace { place_name: String });
 lookup_payload!(UpsertPublisher {
     publisher_name: String
+});
+lookup_payload!(UpsertAuthor {
+    author_name: String,
+    author_year: Option<String>,
+    authority_type: Option<String>,
+    auth_list: Option<String>,
 });
 lookup_payload!(UpsertSupplier {
     supplier_name: String,
@@ -580,6 +595,11 @@ pub fn router() -> Router<AppState> {
                 .put(update_publisher)
                 .delete(delete_publisher),
         )
+        .route("/authors", get(authors).post(create_author))
+        .route(
+            "/authors/:id",
+            get(get_author).put(update_author).delete(delete_author),
+        )
         .route("/suppliers", get(suppliers).post(create_supplier))
         .route(
             "/suppliers/:id",
@@ -860,6 +880,23 @@ numeric_lookup_crud!(
         account,
         e_mail
     ]
+);
+
+numeric_lookup_crud!(
+    get_author,
+    create_author,
+    update_author,
+    delete_author,
+    "/lookups/authors",
+    "/lookups/authors/{id}",
+    "authors",
+    Author,
+    UpsertAuthor,
+    "SELECT author_id, author_name, author_year, authority_type, auth_list FROM mst_author WHERE author_id = ?",
+    "INSERT INTO mst_author (author_name, author_year, authority_type, auth_list, input_date, last_update) VALUES (?, ?, ?, ?, CURDATE(), CURDATE())",
+    "UPDATE mst_author SET author_name = ?, author_year = ?, authority_type = ?, auth_list = ?, last_update = CURDATE() WHERE author_id = ?",
+    "DELETE FROM mst_author WHERE author_id = ?",
+    [author_name, author_year, authority_type, auth_list]
 );
 
 numeric_lookup_crud!(
@@ -1271,6 +1308,34 @@ async fn suppliers(
         "SELECT COUNT(*) FROM mst_supplier",
         "suppliers",
         |row: &Supplier| row.supplier_id.to_string(),
+    )
+    .await?;
+
+    Ok(Json(document))
+}
+
+#[utoipa::path(
+    get,
+    path = "/lookups/authors",
+    responses((status = 200, body = JsonApiDocument)),
+    security(("bearerAuth" = [])),
+    tag = "Lookups"
+)]
+async fn authors(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(params): Query<LookupParams>,
+) -> Result<Json<JsonApiDocument>, AppError> {
+    auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
+
+    let document = searchable_paged_lookup(
+        &state,
+        params,
+        "SELECT author_id, author_name, author_year, authority_type, auth_list FROM mst_author ORDER BY author_id LIMIT ? OFFSET ?",
+        "SELECT COUNT(*) FROM mst_author",
+        "author_name, author_year, authority_type, auth_list",
+        "authors",
+        |row: &Author| row.author_id.to_string(),
     )
     .await?;
 
