@@ -777,6 +777,7 @@ All lookup endpoints support the following pagination parameters:
 
 *   `page[number]`: (Optional) The page number for pagination (default: 1).
 *   `page[size]`: (Optional) The number of items per page (default: 10).
+*   `q`: (Optional) Search text for bibliographic lookup resources such as GMD, publishers, languages, places, frequencies, topics, content/media/carrier types, and relation terms.
 
 #### Get Member Types
 

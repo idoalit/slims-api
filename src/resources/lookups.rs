@@ -263,6 +263,47 @@ lookup_payload!(UpsertLoanRule {
     grace_periode: i64,
 });
 
+#[derive(Debug, Default)]
+struct LookupParams {
+    pagination: Pagination,
+    q: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for LookupParams {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawParams {
+            #[serde(rename = "page[number]", alias = "page", default)]
+            page_number: Option<String>,
+            #[serde(rename = "page[size]", alias = "per_page", default)]
+            page_size: Option<String>,
+            #[serde(default)]
+            q: Option<String>,
+        }
+
+        let raw = RawParams::deserialize(deserializer)?;
+        let page_number = raw
+            .page_number
+            .map(|value| value.parse::<u32>().map_err(serde::de::Error::custom))
+            .transpose()?;
+        let page_size = raw
+            .page_size
+            .map(|value| value.parse::<u32>().map_err(serde::de::Error::custom))
+            .transpose()?;
+
+        Ok(Self {
+            pagination: Pagination {
+                page_number,
+                page_size,
+            },
+            q: raw.q,
+        })
+    }
+}
+
 async fn paged_lookup<T, F>(
     state: &AppState,
     pagination: Pagination,
@@ -285,6 +326,80 @@ where
         .bind(offset)
         .fetch_all(&state.pool)
         .await?;
+
+    let data = rows
+        .into_iter()
+        .map(|row| {
+            let id = id_fn(&row);
+            resource(resource_type, id, row)
+        })
+        .collect();
+
+    Ok(collection_document(
+        data,
+        pagination_meta(page, per_page, total),
+    ))
+}
+
+async fn searchable_paged_lookup<T, F>(
+    state: &AppState,
+    params: LookupParams,
+    data_query: &str,
+    count_query: &str,
+    search_columns: &str,
+    resource_type: &'static str,
+    mut id_fn: F,
+) -> Result<JsonApiDocument, AppError>
+where
+    for<'r> T: FromRow<'r, MySqlRow> + Send + Unpin + Serialize + ToSchema<'static> + 'static,
+    F: FnMut(&T) -> String,
+{
+    let (limit, offset, page, per_page) = params.pagination.limit_offset();
+    let search = params
+        .q
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{value}%"));
+    let search_clause = format!("CONCAT_WS(' ', {search_columns}) LIKE ?");
+
+    let (data_sql, count_sql) = if search.is_some() {
+        let (select, order) = data_query
+            .split_once(" ORDER BY ")
+            .ok_or_else(|| AppError::Internal("invalid lookup query".into()))?;
+        (
+            format!("{select} WHERE {search_clause} ORDER BY {order}"),
+            format!("{count_query} WHERE {search_clause}"),
+        )
+    } else {
+        (data_query.to_string(), count_query.to_string())
+    };
+
+    let total = if let Some(pattern) = search.as_ref() {
+        sqlx::query_scalar::<_, i64>(&count_sql)
+            .bind(pattern)
+            .fetch_one(&state.pool)
+            .await?
+    } else {
+        sqlx::query_scalar::<_, i64>(&count_sql)
+            .fetch_one(&state.pool)
+            .await?
+    };
+
+    let rows = if let Some(pattern) = search.as_ref() {
+        sqlx::query_as::<_, T>(&data_sql)
+            .bind(pattern)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await?
+    } else {
+        sqlx::query_as::<_, T>(&data_sql)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await?
+    };
 
     let data = rows
         .into_iter()
@@ -951,15 +1066,16 @@ async fn locations(
 async fn languages(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(pagination): Query<Pagination>,
+    Query(params): Query<LookupParams>,
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
-    let document = paged_lookup(
+    let document = searchable_paged_lookup(
         &state,
-        pagination,
+        params,
         "SELECT language_id, language_name FROM mst_language ORDER BY language_id LIMIT ? OFFSET ?",
         "SELECT COUNT(*) FROM mst_language",
+        "language_id, language_name",
         "languages",
         |row: &Language| row.language_id.clone(),
     )
@@ -978,15 +1094,16 @@ async fn languages(
 async fn gmds(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(pagination): Query<Pagination>,
+    Query(params): Query<LookupParams>,
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
-    let document = paged_lookup(
+    let document = searchable_paged_lookup(
         &state,
-        pagination,
+        params,
         "SELECT gmd_id, gmd_code, gmd_name, icon_image FROM mst_gmd ORDER BY gmd_id LIMIT ? OFFSET ?",
         "SELECT COUNT(*) FROM mst_gmd",
+        "gmd_code, gmd_name, icon_image",
         "gmd",
         |row: &Gmd| row.gmd_id.to_string(),
     )
@@ -1032,15 +1149,16 @@ async fn item_statuses(
 async fn frequencies(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(pagination): Query<Pagination>,
+    Query(params): Query<LookupParams>,
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
-    let document = paged_lookup(
+    let document = searchable_paged_lookup(
         &state,
-        pagination,
+        params,
         "SELECT frequency_id, frequency, language_prefix, time_increment, time_unit FROM mst_frequency ORDER BY frequency_id LIMIT ? OFFSET ?",
         "SELECT COUNT(*) FROM mst_frequency",
+        "frequency, language_prefix, time_increment, time_unit",
         "frequencies",
         |row: &Frequency| row.frequency_id.to_string(),
     )
@@ -1086,15 +1204,16 @@ async fn modules(
 async fn places(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(pagination): Query<Pagination>,
+    Query(params): Query<LookupParams>,
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
-    let document = paged_lookup(
+    let document = searchable_paged_lookup(
         &state,
-        pagination,
+        params,
         "SELECT place_id, place_name FROM mst_place ORDER BY place_id LIMIT ? OFFSET ?",
         "SELECT COUNT(*) FROM mst_place",
+        "place_name",
         "places",
         |row: &Place| row.place_id.to_string(),
     )
@@ -1113,15 +1232,16 @@ async fn places(
 async fn publishers(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(pagination): Query<Pagination>,
+    Query(params): Query<LookupParams>,
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
-    let document = paged_lookup(
+    let document = searchable_paged_lookup(
         &state,
-        pagination,
+        params,
         "SELECT publisher_id, publisher_name FROM mst_publisher ORDER BY publisher_id LIMIT ? OFFSET ?",
         "SELECT COUNT(*) FROM mst_publisher",
+        "publisher_name",
         "publishers",
         |row: &Publisher| row.publisher_id.to_string(),
     )
@@ -1167,15 +1287,16 @@ async fn suppliers(
 async fn topics(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(pagination): Query<Pagination>,
+    Query(params): Query<LookupParams>,
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
-    let document = paged_lookup(
+    let document = searchable_paged_lookup(
         &state,
-        pagination,
+        params,
         "SELECT topic_id, topic, topic_type, auth_list, classification FROM mst_topic ORDER BY topic_id LIMIT ? OFFSET ?",
         "SELECT COUNT(*) FROM mst_topic",
+        "topic, topic_type, auth_list, classification",
         "topics",
         |row: &Topic| row.topic_id.to_string(),
     )
@@ -1194,15 +1315,16 @@ async fn topics(
 async fn content_types(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(pagination): Query<Pagination>,
+    Query(params): Query<LookupParams>,
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
-    let document = paged_lookup(
+    let document = searchable_paged_lookup(
         &state,
-        pagination,
+        params,
         "SELECT id, content_type, code, code2 FROM mst_content_type ORDER BY id LIMIT ? OFFSET ?",
         "SELECT COUNT(*) FROM mst_content_type",
+        "content_type, code, code2",
         "content-types",
         |row: &ContentType| row.id.to_string(),
     )
@@ -1221,15 +1343,16 @@ async fn content_types(
 async fn media_types(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(pagination): Query<Pagination>,
+    Query(params): Query<LookupParams>,
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
-    let document = paged_lookup(
+    let document = searchable_paged_lookup(
         &state,
-        pagination,
+        params,
         "SELECT id, media_type, code, code2 FROM mst_media_type ORDER BY id LIMIT ? OFFSET ?",
         "SELECT COUNT(*) FROM mst_media_type",
+        "media_type, code, code2",
         "media-types",
         |row: &MediaType| row.id.to_string(),
     )
@@ -1248,15 +1371,16 @@ async fn media_types(
 async fn carrier_types(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(pagination): Query<Pagination>,
+    Query(params): Query<LookupParams>,
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
-    let document = paged_lookup(
+    let document = searchable_paged_lookup(
         &state,
-        pagination,
+        params,
         "SELECT id, carrier_type, code, code2 FROM mst_carrier_type ORDER BY id LIMIT ? OFFSET ?",
         "SELECT COUNT(*) FROM mst_carrier_type",
+        "carrier_type, code, code2",
         "carrier-types",
         |row: &CarrierType| row.id.to_string(),
     )
@@ -1275,15 +1399,16 @@ async fn carrier_types(
 async fn relation_terms(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(pagination): Query<Pagination>,
+    Query(params): Query<LookupParams>,
 ) -> Result<Json<JsonApiDocument>, AppError> {
     auth.require_access(ModuleAccess::MasterFile, Permission::Read)?;
 
-    let document = paged_lookup(
+    let document = searchable_paged_lookup(
         &state,
-        pagination,
+        params,
         "SELECT rt_id, rt_desc FROM mst_relation_term ORDER BY rt_id LIMIT ? OFFSET ?",
         "SELECT COUNT(*) FROM mst_relation_term",
+        "rt_id, rt_desc",
         "relation-terms",
         |row: &RelationTerm| row.rt_id.clone(),
     )
@@ -1317,4 +1442,22 @@ async fn loan_rules(
     .await?;
 
     Ok(Json(document))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LookupParams;
+    use axum::{extract::Query, http::Uri};
+
+    #[test]
+    fn lookup_params_accept_search_and_json_api_pagination() {
+        let uri: Uri = "/?page%5Bnumber%5D=2&page%5Bsize%5D=25&q=audio%20disc"
+            .parse()
+            .unwrap();
+        let Query(params) = Query::<LookupParams>::try_from_uri(&uri).unwrap();
+        let (_, _, page, per_page) = params.pagination.limit_offset();
+
+        assert_eq!((page, per_page), (2, 25));
+        assert_eq!(params.q.as_deref(), Some("audio disc"));
+    }
 }
