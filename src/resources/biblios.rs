@@ -255,6 +255,14 @@ struct LoanActivityRow {
     occurred_at: NaiveDateTime,
 }
 
+#[derive(Debug, FromRow)]
+struct BiblioLinkCounts {
+    authors: i64,
+    topics: i64,
+    attachments: i64,
+    relations: i64,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct AuthorInfo {
     pub author_id: i64,
@@ -1716,6 +1724,264 @@ fn normalized_frequency_id(frequency_id: Option<i32>) -> i32 {
     frequency_id.unwrap_or(0)
 }
 
+fn display_text(value: Option<&str>) -> String {
+    value
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| format!("“{value}”"))
+        .unwrap_or_else(|| "kosong".into())
+}
+
+fn push_text_change(
+    changes: &mut Vec<String>,
+    label: &str,
+    before: Option<&str>,
+    after: Option<&str>,
+) {
+    if before != after {
+        changes.push(format!(
+            "{label}: {} → {}",
+            display_text(before),
+            display_text(after)
+        ));
+    }
+}
+
+fn push_id_change(changes: &mut Vec<String>, label: &str, before: Option<i32>, after: Option<i32>) {
+    if before != after {
+        let before = before
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "kosong".into());
+        let after = after
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "kosong".into());
+        changes.push(format!("{label}: {before} → {after}"));
+    }
+}
+
+fn push_count_change(changes: &mut Vec<String>, label: &str, before: i64, after: Option<usize>) {
+    if let Some(after) = after {
+        let after = after as i64;
+        if before != after {
+            changes.push(format!("{label}: {before} → {after}"));
+        }
+    }
+}
+
+fn describe_biblio_changes(
+    before: &Biblio,
+    after: &UpsertBiblio,
+    counts: &BiblioLinkCounts,
+) -> String {
+    let mut changes = Vec::new();
+
+    push_text_change(
+        &mut changes,
+        "Judul",
+        Some(&before.title),
+        Some(&after.title),
+    );
+    push_text_change(
+        &mut changes,
+        "Pernyataan tanggung jawab",
+        before.sor.as_deref(),
+        after.sor.as_deref(),
+    );
+    push_text_change(
+        &mut changes,
+        "Edisi",
+        before.edition.as_deref(),
+        after.edition.as_deref(),
+    );
+    push_text_change(
+        &mut changes,
+        "ISBN/ISSN",
+        before.isbn_issn.as_deref(),
+        after.isbn_issn.as_deref(),
+    );
+    push_id_change(&mut changes, "GMD", before.gmd_id, after.gmd_id);
+    push_id_change(
+        &mut changes,
+        "Penerbit",
+        before.publisher_id,
+        after.publisher_id,
+    );
+    push_text_change(
+        &mut changes,
+        "Tahun terbit",
+        before.publish_year.as_deref(),
+        after.publish_year.as_deref(),
+    );
+    push_text_change(
+        &mut changes,
+        "Kolasi",
+        before.collation.as_deref(),
+        after.collation.as_deref(),
+    );
+    push_text_change(
+        &mut changes,
+        "Judul seri",
+        before.series_title.as_deref(),
+        after.series_title.as_deref(),
+    );
+    push_text_change(
+        &mut changes,
+        "Bahasa",
+        before.language_id.as_deref(),
+        after.language_id.as_deref(),
+    );
+    push_text_change(
+        &mut changes,
+        "Sumber",
+        before.source.as_deref(),
+        after.source.as_deref(),
+    );
+    push_id_change(
+        &mut changes,
+        "Tipe isi",
+        before.content_type_id,
+        after.content_type_id,
+    );
+    push_id_change(
+        &mut changes,
+        "Tipe media",
+        before.media_type_id,
+        after.media_type_id,
+    );
+    push_id_change(
+        &mut changes,
+        "Tipe pembawa",
+        before.carrier_type_id,
+        after.carrier_type_id,
+    );
+    let before_frequency = normalized_frequency_id(before.frequency_id);
+    let after_frequency = normalized_frequency_id(after.frequency_id);
+    if before_frequency != after_frequency {
+        changes.push(format!(
+            "Kala terbit: {before_frequency} → {after_frequency}"
+        ));
+    }
+    push_id_change(
+        &mut changes,
+        "Tempat terbit",
+        before.publish_place_id,
+        after.publish_place_id,
+    );
+    push_text_change(
+        &mut changes,
+        "Klasifikasi",
+        before.classification.as_deref(),
+        after.classification.as_deref(),
+    );
+    push_text_change(
+        &mut changes,
+        "Nomor panggil",
+        before.call_number.as_deref(),
+        after.call_number.as_deref(),
+    );
+    if before.notes != after.notes {
+        changes.push("Catatan diperbarui".into());
+    }
+    if before.image != after.image {
+        changes.push(
+            if after
+                .image
+                .as_deref()
+                .is_some_and(|value| !value.is_empty())
+            {
+                "Sampul diperbarui".into()
+            } else {
+                "Sampul dihapus".into()
+            },
+        );
+    }
+    push_text_change(
+        &mut changes,
+        "Label",
+        before.labels.as_deref(),
+        after.labels.as_deref(),
+    );
+    push_text_change(
+        &mut changes,
+        "Detail khusus",
+        before.spec_detail_info.as_deref(),
+        after.spec_detail_info.as_deref(),
+    );
+
+    let before_hidden = before.opac_hide.unwrap_or(0) == 1;
+    let after_hidden = after.opac_hide.unwrap_or(0) == 1;
+    if before_hidden != after_hidden {
+        changes.push(format!(
+            "Status OPAC: {} → {}",
+            if before_hidden {
+                "Disembunyikan"
+            } else {
+                "Ditampilkan"
+            },
+            if after_hidden {
+                "Disembunyikan"
+            } else {
+                "Ditampilkan"
+            }
+        ));
+    }
+    let before_promoted = before.promoted.unwrap_or(0) == 1;
+    let after_promoted = after.promoted.unwrap_or(0) == 1;
+    if before_promoted != after_promoted {
+        changes.push(format!(
+            "Promosi: {} → {}",
+            if before_promoted {
+                "Aktif"
+            } else {
+                "Tidak aktif"
+            },
+            if after_promoted {
+                "Aktif"
+            } else {
+                "Tidak aktif"
+            }
+        ));
+    }
+
+    push_count_change(
+        &mut changes,
+        "Pengarang",
+        counts.authors,
+        after
+            .authors
+            .as_ref()
+            .map(Vec::len)
+            .or_else(|| after.author_ids.as_ref().map(Vec::len)),
+    );
+    push_count_change(
+        &mut changes,
+        "Subjek",
+        counts.topics,
+        after
+            .topics
+            .as_ref()
+            .map(Vec::len)
+            .or_else(|| after.topic_ids.as_ref().map(Vec::len)),
+    );
+    push_count_change(
+        &mut changes,
+        "Lampiran",
+        counts.attachments,
+        after.attachments.as_ref().map(Vec::len),
+    );
+    push_count_change(
+        &mut changes,
+        "Relasi",
+        counts.relations,
+        after.relations.as_ref().map(Vec::len),
+    );
+
+    if changes.is_empty() {
+        "Penyimpanan dilakukan tanpa perubahan metadata.".into()
+    } else {
+        format!("Perubahan: {}.", changes.join("; "))
+    }
+}
+
 async fn write_biblio_log(
     state: &AppState,
     auth: &AuthUser,
@@ -1723,6 +1989,7 @@ async fn write_biblio_log(
     title: &str,
     action: &str,
     payload: &UpsertBiblio,
+    additional_information: &str,
     occurred_at: NaiveDateTime,
 ) -> Result<(), AppError> {
     let user_id = auth.claims.sub.parse::<i64>().unwrap_or_default();
@@ -1739,11 +2006,7 @@ async fn write_biblio_log(
     .bind(action)
     .bind("1")
     .bind(rawdata)
-    .bind(if action == "create" {
-        "Bibliografi dibuat melalui API"
-    } else {
-        "Metadata bibliografi diperbarui melalui API"
-    })
+    .bind(additional_information)
     .bind(occurred_at)
     .execute(&state.pool)
     .await?;
@@ -1819,6 +2082,7 @@ async fn create_biblio(
         &payload.title,
         "create",
         &payload,
+        "Bibliografi dibuat melalui API",
         now,
     )
     .await?;
@@ -1854,6 +2118,22 @@ async fn update_biblio(
     auth.require_access(ModuleAccess::Bibliography, Permission::Write)?;
 
     let now = chrono::Utc::now().naive_utc();
+    let select_sql = format!("SELECT {BIBLIO_SELECT_COLUMNS} FROM biblio WHERE biblio_id = ?");
+    let before = sqlx::query_as::<_, Biblio>(&select_sql)
+        .bind(biblio_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let link_counts = sqlx::query_as::<_, BiblioLinkCounts>(
+        "SELECT (SELECT COUNT(*) FROM biblio_author WHERE biblio_id = ?) AS authors, (SELECT COUNT(*) FROM biblio_topic WHERE biblio_id = ?) AS topics, (SELECT COUNT(*) FROM biblio_attachment WHERE biblio_id = ?) AS attachments, (SELECT COUNT(*) FROM biblio_relation WHERE biblio_id = ?) AS relations",
+    )
+    .bind(biblio_id)
+    .bind(biblio_id)
+    .bind(biblio_id)
+    .bind(biblio_id)
+    .fetch_one(&state.pool)
+    .await?;
+    let change_description = describe_biblio_changes(&before, &payload, &link_counts);
 
     let updated = sqlx::query(
         "UPDATE biblio SET title = ?, sor = ?, edition = ?, isbn_issn = ?, gmd_id = ?, publisher_id = ?, publish_year = ?, collation = ?, series_title = ?, language_id = ?, source = ?, content_type_id = ?, media_type_id = ?, carrier_type_id = ?, frequency_id = ?, publish_place_id = ?, classification = ?, call_number = ?, notes = ?, image = ?, file_att = ?, opac_hide = ?, promoted = ?, labels = ?, spec_detail_info = ?, last_update = ? WHERE biblio_id = ?",
@@ -1910,11 +2190,11 @@ async fn update_biblio(
         &payload.title,
         "update",
         &payload,
+        &change_description,
         now,
     )
     .await?;
 
-    let select_sql = format!("SELECT {BIBLIO_SELECT_COLUMNS} FROM biblio WHERE biblio_id = ?");
     let rec = sqlx::query_as::<_, Biblio>(&select_sql)
         .bind(biblio_id)
         .fetch_one(&state.pool)
@@ -2076,5 +2356,30 @@ mod tests {
     fn empty_frequency_uses_slims_not_applicable_sentinel() {
         assert_eq!(normalized_frequency_id(None), 0);
         assert_eq!(normalized_frequency_id(Some(7)), 7);
+    }
+
+    #[test]
+    fn update_log_describes_changed_fields() {
+        let before = sample_biblio();
+        let mut value = serde_json::to_value(&before).expect("biblio serializes");
+        value["title"] = serde_json::json!("Updated title");
+        value["notes"] = serde_json::json!("Updated notes");
+        value["promoted"] = serde_json::json!(0);
+        let after: UpsertBiblio =
+            serde_json::from_value(value).expect("biblio converts to update payload");
+        let description = describe_biblio_changes(
+            &before,
+            &after,
+            &BiblioLinkCounts {
+                authors: 0,
+                topics: 0,
+                attachments: 0,
+                relations: 0,
+            },
+        );
+
+        assert!(description.contains("Judul: “Public title” → “Updated title”"));
+        assert!(description.contains("Catatan diperbarui"));
+        assert!(description.contains("Promosi: Aktif → Tidak aktif"));
     }
 }
