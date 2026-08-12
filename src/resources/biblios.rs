@@ -58,19 +58,19 @@ pub struct Biblio {
     pub last_update: Option<NaiveDateTime>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct BiblioAuthorInput {
     pub author_id: i64,
     pub authority_level_id: u8,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct BiblioTopicInput {
     pub topic_id: i64,
     pub subject_level_id: u8,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct BiblioAttachmentInput {
     pub file_id: i64,
     pub placement: Option<String>,
@@ -78,7 +78,13 @@ pub struct BiblioAttachmentInput {
     pub access_limit: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct BiblioRelationInput {
+    pub biblio_id: i64,
+    pub rel_type: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UpsertBiblio {
     pub title: String,
     pub sor: Option<String>,
@@ -112,6 +118,7 @@ pub struct UpsertBiblio {
     /// Legacy input. New clients should send `topics` with a subject level.
     pub topic_ids: Option<Vec<i64>>,
     pub attachments: Option<Vec<BiblioAttachmentInput>>,
+    pub relations: Option<Vec<BiblioRelationInput>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
@@ -221,6 +228,33 @@ pub struct BiblioRelationInfo {
     pub rel_type: i32,
 }
 
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct BiblioActivity {
+    pub id: String,
+    pub activity_type: String,
+    pub title: String,
+    pub description: String,
+    pub actor: Option<String>,
+    pub occurred_at: NaiveDateTime,
+}
+
+#[derive(Debug, FromRow)]
+struct BiblioLogRow {
+    biblio_log_id: i64,
+    realname: String,
+    action: String,
+    affectedrow: String,
+    additional_information: String,
+    date: NaiveDateTime,
+}
+
+#[derive(Debug, FromRow)]
+struct LoanActivityRow {
+    loan_id: i64,
+    item_code: Option<String>,
+    occurred_at: NaiveDateTime,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, FromRow, ToSchema)]
 pub struct AuthorInfo {
     pub author_id: i64,
@@ -269,6 +303,8 @@ pub struct BiblioResponse {
     pub relations: Option<Vec<BiblioRelationInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<AttachmentInfo>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activities: Option<Vec<BiblioActivity>>,
     #[schema(value_type = Object)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom: Option<JsonValue>,
@@ -772,6 +808,13 @@ async fn enrich_biblios(
             None
         };
 
+        let activities =
+            if visibility == CatalogVisibility::Protected && includes.contains("activities") {
+                Some(fetch_biblio_activities(state, &biblio).await?)
+            } else {
+                None
+            };
+
         data.push(BiblioResponse {
             biblio,
             gmd,
@@ -787,11 +830,123 @@ async fn enrich_biblios(
             items,
             relations,
             attachments,
+            activities,
             custom,
         });
     }
 
     Ok(data)
+}
+
+async fn fetch_biblio_activities(
+    state: &AppState,
+    biblio: &Biblio,
+) -> Result<Vec<BiblioActivity>, AppError> {
+    let mut activities = Vec::new();
+
+    let logs = sqlx::query_as::<_, BiblioLogRow>(
+        "SELECT biblio_log_id, realname, action, affectedrow, additional_information, date FROM biblio_log WHERE biblio_id = ? ORDER BY date DESC",
+    )
+    .bind(biblio.biblio_id)
+    .fetch_all(&state.pool)
+    .await?;
+    let has_create_log = logs.iter().any(|log| {
+        matches!(
+            log.action.trim().to_lowercase().as_str(),
+            "create" | "insert"
+        )
+    });
+    if !has_create_log {
+        if let Some(occurred_at) = biblio.input_date {
+            activities.push(BiblioActivity {
+                id: format!("created-{}", biblio.biblio_id),
+                activity_type: "created".into(),
+                title: "Bibliografi dibuat".into(),
+                description: format!("Bibliografi “{}” ditambahkan ke katalog.", biblio.title),
+                actor: None,
+                occurred_at,
+            });
+        }
+    }
+    if logs.is_empty() {
+        if let Some(occurred_at) = biblio.last_update {
+            if Some(occurred_at) != biblio.input_date {
+                activities.push(BiblioActivity {
+                    id: format!("updated-{}", biblio.biblio_id),
+                    activity_type: "updated".into(),
+                    title: "Bibliografi diperbarui".into(),
+                    description: "Metadata bibliografi pernah diperbarui.".into(),
+                    actor: None,
+                    occurred_at,
+                });
+            }
+        }
+    }
+    for log in logs {
+        let action = log.action.trim().to_lowercase();
+        let title = match action.as_str() {
+            "create" | "insert" => "Bibliografi dibuat",
+            "delete" => "Bibliografi dihapus",
+            _ => "Bibliografi diperbarui",
+        };
+        let description = if log.additional_information.trim().is_empty() {
+            format!("{} baris terdampak.", log.affectedrow)
+        } else {
+            log.additional_information
+        };
+        activities.push(BiblioActivity {
+            id: format!("log-{}", log.biblio_log_id),
+            activity_type: action,
+            title: title.into(),
+            description,
+            actor: (!log.realname.trim().is_empty()).then_some(log.realname),
+            occurred_at: log.date,
+        });
+    }
+
+    let loans = sqlx::query_as::<_, LoanActivityRow>(
+        "SELECT loan_id, item_code, COALESCE(input_date, CAST(loan_date AS DATETIME)) AS occurred_at FROM loan_history WHERE biblio_id = ? AND COALESCE(input_date, CAST(loan_date AS DATETIME)) IS NOT NULL",
+    )
+    .bind(biblio.biblio_id)
+    .fetch_all(&state.pool)
+    .await?;
+    for loan in loans {
+        let item = loan.item_code.as_deref().unwrap_or("tanpa kode");
+        activities.push(BiblioActivity {
+            id: format!("loan-{}", loan.loan_id),
+            activity_type: "loan".into(),
+            title: "Eksemplar dipinjam".into(),
+            description: format!("Eksemplar {item} tercatat sebagai dipinjam."),
+            actor: None,
+            occurred_at: loan.occurred_at,
+        });
+    }
+
+    let returns = sqlx::query_as::<_, LoanActivityRow>(
+        "SELECT loan_id, item_code, CAST(return_date AS DATETIME) AS occurred_at FROM loan_history WHERE biblio_id = ? AND return_date IS NOT NULL",
+    )
+    .bind(biblio.biblio_id)
+    .fetch_all(&state.pool)
+    .await?;
+    for returned in returns {
+        let item = returned.item_code.as_deref().unwrap_or("tanpa kode");
+        activities.push(BiblioActivity {
+            id: format!("return-{}", returned.loan_id),
+            activity_type: "return".into(),
+            title: "Eksemplar dikembalikan".into(),
+            description: format!("Eksemplar {item} telah dikembalikan."),
+            actor: None,
+            occurred_at: returned.occurred_at,
+        });
+    }
+
+    activities.sort_by(|left, right| right.occurred_at.cmp(&left.occurred_at));
+    activities.dedup_by(|left, right| {
+        left.activity_type == right.activity_type
+            && left.occurred_at == right.occurred_at
+            && left.title == right.title
+    });
+    Ok(activities)
 }
 
 fn attachment_query(visibility: CatalogVisibility) -> &'static str {
@@ -808,10 +963,10 @@ fn attachment_query(visibility: CatalogVisibility) -> &'static str {
 fn relation_query(visibility: CatalogVisibility) -> &'static str {
     match visibility {
         CatalogVisibility::Protected => {
-            "SELECT br.rel_biblio_id AS biblio_id, b.title, br.rel_type FROM biblio_relation br JOIN biblio b ON b.biblio_id = br.rel_biblio_id WHERE br.biblio_id = ?"
+            "SELECT br.rel_biblio_id AS biblio_id, b.title, COALESCE(br.rel_type, 1) AS rel_type FROM biblio_relation br JOIN biblio b ON b.biblio_id = br.rel_biblio_id WHERE br.biblio_id = ?"
         }
         CatalogVisibility::Public => {
-            "SELECT br.rel_biblio_id AS biblio_id, b.title, br.rel_type FROM biblio_relation br JOIN biblio b ON b.biblio_id = br.rel_biblio_id WHERE br.biblio_id = ? AND COALESCE(b.opac_hide, 0) = 0"
+            "SELECT br.rel_biblio_id AS biblio_id, b.title, COALESCE(br.rel_type, 1) AS rel_type FROM biblio_relation br JOIN biblio b ON b.biblio_id = br.rel_biblio_id WHERE br.biblio_id = ? AND COALESCE(b.opac_hide, 0) = 0"
         }
     }
 }
@@ -1376,6 +1531,7 @@ async fn replace_biblio_links(
     topics: &Option<Vec<BiblioTopicInput>>,
     topic_ids: &Option<Vec<i64>>,
     attachments: &Option<Vec<BiblioAttachmentInput>>,
+    relations: &Option<Vec<BiblioRelationInput>>,
 ) -> Result<(), AppError> {
     let author_links = authors
         .as_ref()
@@ -1516,11 +1672,82 @@ async fn replace_biblio_links(
         }
     }
 
+    if let Some(relations) = relations {
+        let mut relation_links = HashMap::new();
+        for relation in relations {
+            if relation.biblio_id == biblio_id {
+                return Err(AppError::BadRequest(
+                    "bibliografi tidak dapat direlasikan dengan dirinya sendiri".into(),
+                ));
+            }
+            let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM biblio WHERE biblio_id = ?")
+                .bind(relation.biblio_id)
+                .fetch_one(&state.pool)
+                .await?;
+            if exists == 0 {
+                return Err(AppError::BadRequest(format!(
+                    "biblio_id {} tidak ditemukan",
+                    relation.biblio_id
+                )));
+            }
+            relation_links.insert(relation.biblio_id, relation.rel_type.unwrap_or(1));
+        }
+
+        sqlx::query("DELETE FROM biblio_relation WHERE biblio_id = ?")
+            .bind(biblio_id)
+            .execute(&state.pool)
+            .await?;
+        for (related_biblio_id, rel_type) in relation_links {
+            sqlx::query(
+                "INSERT INTO biblio_relation (biblio_id, rel_biblio_id, rel_type) VALUES (?, ?, ?)",
+            )
+            .bind(biblio_id)
+            .bind(related_biblio_id)
+            .bind(rel_type)
+            .execute(&state.pool)
+            .await?;
+        }
+    }
+
     Ok(())
 }
 
 fn normalized_frequency_id(frequency_id: Option<i32>) -> i32 {
     frequency_id.unwrap_or(0)
+}
+
+async fn write_biblio_log(
+    state: &AppState,
+    auth: &AuthUser,
+    biblio_id: i64,
+    title: &str,
+    action: &str,
+    payload: &UpsertBiblio,
+    occurred_at: NaiveDateTime,
+) -> Result<(), AppError> {
+    let user_id = auth.claims.sub.parse::<i64>().unwrap_or_default();
+    let rawdata = serde_json::to_string(payload)
+        .map_err(|error| AppError::BadRequest(format!("payload log tidak valid: {error}")))?;
+    sqlx::query(
+        "INSERT INTO biblio_log (biblio_id, user_id, realname, title, ip, action, affectedrow, rawdata, additional_information, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(biblio_id)
+    .bind(user_id)
+    .bind(&auth.claims.username)
+    .bind(title)
+    .bind("api")
+    .bind(action)
+    .bind("1")
+    .bind(rawdata)
+    .bind(if action == "create" {
+        "Bibliografi dibuat melalui API"
+    } else {
+        "Metadata bibliografi diperbarui melalui API"
+    })
+    .bind(occurred_at)
+    .execute(&state.pool)
+    .await?;
+    Ok(())
 }
 
 #[utoipa::path(
@@ -1582,6 +1809,17 @@ async fn create_biblio(
         &payload.topics,
         &payload.topic_ids,
         &payload.attachments,
+        &payload.relations,
+    )
+    .await?;
+    write_biblio_log(
+        &state,
+        &auth,
+        biblio_id,
+        &payload.title,
+        "create",
+        &payload,
+        now,
     )
     .await?;
 
@@ -1662,6 +1900,17 @@ async fn update_biblio(
         &payload.topics,
         &payload.topic_ids,
         &payload.attachments,
+        &payload.relations,
+    )
+    .await?;
+    write_biblio_log(
+        &state,
+        &auth,
+        biblio_id,
+        &payload.title,
+        "update",
+        &payload,
+        now,
     )
     .await?;
 
@@ -1764,6 +2013,7 @@ mod tests {
             }]),
             relations: None,
             attachments: None,
+            activities: None,
             custom: Some(serde_json::json!({ "private": true })),
         });
 

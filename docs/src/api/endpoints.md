@@ -101,7 +101,7 @@ The `biblios` resource represents individual bibliographic records within SLiMS.
     *   `filter[gmd_id]`: (Optional) Filter biblios by General Material Designation (GMD) ID.
     *   `filter[language_id]`: (Optional) Filter biblios by language ID.
     *   `include`: (Optional) Comma-separated list of related resources to include as compound documents (sideloaded).
-        *   **Supported relations:** `gmd`, `publisher`, `language`, `content_type`, `media_type`, `carrier_type`, `frequency`, `place`, `authors`, `topics`, `items`, `relations`, `attachments`, `custom`.
+        *   **Supported relations:** `gmd`, `publisher`, `language`, `content_type`, `media_type`, `carrier_type`, `frequency`, `place`, `authors`, `topics`, `items`, `relations`, `attachments`, `activities`, `custom`. `activities` is only available on authenticated admin endpoints and combines bibliography changes with loan/return events.
     *   `fields[biblios]`: (Optional) Comma-separated list of specific fields to return for the `biblios` resource (sparse fieldsets).
 *   **Example Response:** (JSON:API collection document)
     ```json
